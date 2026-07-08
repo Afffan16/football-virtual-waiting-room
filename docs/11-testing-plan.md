@@ -1,30 +1,44 @@
-# Testing Strategy and Validation Plan
+# 🧪 Testing Strategy & Validation Plan
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/11-testing-plan.md`
 
-Version: 1.0
-
----
-
-# Purpose
-
-This document defines the testing strategy for the Football Virtual Waiting Room.
-
-The objective is to verify that every component behaves correctly, satisfies the defined access patterns, and scales under high traffic while maintaining data consistency.
-
-The testing approach includes:
-
-- Unit Testing
-- Integration Testing
-- API Testing
-- DynamoDB Validation
-- Load Testing
-- Failure Testing
-- Security Testing
+← [Back: Step-by-Step Build](10-step-by-step-build.md) · Next: [Load Testing →](12-load-testing.md)
 
 ---
 
-# Testing Objectives
+## Table of Contents
+
+- [Purpose](#purpose)
+- [Testing Objectives](#testing-objectives)
+- [Testing Pyramid](#testing-pyramid)
+- [Test Environment](#test-environment)
+- [Unit Testing](#unit-testing)
+- [Integration Testing](#integration-testing)
+- [API Testing](#api-testing)
+- [DynamoDB Validation](#dynamodb-validation)
+- [TTL Testing](#ttl-testing)
+- [Streams Testing](#streams-testing)
+- [Load & Stress Testing](#load--stress-testing)
+- [Failure Testing](#failure-testing)
+- [Security Testing](#security-testing)
+- [Performance Targets](#performance-targets)
+- [Observability](#observability)
+- [Acceptance Criteria](#acceptance-criteria)
+- [Regression Testing](#regression-testing)
+- [Test Deliverables](#test-deliverables)
+- [Summary](#summary)
+
+---
+
+## Purpose
+
+This document defines the testing strategy for the Football Virtual Waiting Room — covering everything needed to verify that each component behaves correctly, satisfies the access patterns from [`03-access-patterns.md`](03-access-patterns.md), and holds up under high traffic without sacrificing data consistency.
+
+The strategy spans unit testing, integration testing, API testing, DynamoDB-specific validation, load testing, failure testing, and security testing. Detailed load test scenarios and results live in the companion document, [`12-load-testing.md`](12-load-testing.md).
+
+---
+
+## Testing Objectives
 
 The system should demonstrate:
 
@@ -34,133 +48,89 @@ The system should demonstrate:
 - Scalability
 - Fault tolerance
 - Low latency
-- Correct DynamoDB behavior
+- Correct DynamoDB behavior — queries only, never scans
 
 ---
 
-# Testing Pyramid
+## Testing Pyramid
 
-```
-                Load Tests
-                     ▲
-
-            End-to-End Tests
-                     ▲
-
-          Integration Tests
-                     ▲
-
-              Unit Tests
+```mermaid
+flowchart BT
+    U["Unit Tests"] --> I["Integration Tests"]
+    I --> E["End-to-End Tests"]
+    E --> L["Load Tests"]
 ```
 
----
-
-# Test Environment
-
-AWS Services
-
-- API Gateway
-- Lambda
-- DynamoDB
-- CloudWatch
-
-Testing Tools
-
-- pytest
-- Postman
-- AWS SAM CLI
-- k6
-- Artillery
-- Locust
+Most coverage sits at the unit level, where individual Lambda logic is cheap and fast to verify. Integration, end-to-end, and load tests narrow progressively, confirming the full stack behaves correctly as pieces are combined.
 
 ---
 
-# Unit Testing
+## Test Environment
 
-## Objective
-
-Verify individual Lambda functions.
+| AWS Services | Testing Tools |
+|---|---|
+| API Gateway | pytest |
+| Lambda | Postman |
+| DynamoDB | AWS SAM CLI (`sam local`) |
+| CloudWatch | k6 · Artillery · Locust |
 
 ---
 
-## Join Queue Lambda
+## Unit Testing
 
-Test Cases
+**Objective:** verify each Lambda function in isolation, independent of the rest of the stack.
+
+### Join Queue Lambda
 
 | ID | Description | Expected Result |
-|----|-------------|----------------|
+|---|---|---|
 | UT-01 | Valid registration | Queue item created |
 | UT-02 | Missing Event ID | HTTP 400 |
 | UT-03 | Missing User ID | HTTP 400 |
 | UT-04 | Duplicate registration | HTTP 409 |
 | UT-05 | Closed event | HTTP 403 |
 
----
-
-## Queue Status Lambda
+### Queue Status Lambda
 
 | ID | Description | Expected Result |
-|----|-------------|----------------|
-| UT-06 | Existing queue | Queue returned |
-| UT-07 | Unknown queue | HTTP 404 |
+|---|---|---|
+| UT-06 | Existing queue entry | Queue record returned |
+| UT-07 | Unknown queue entry | HTTP 404 |
 | UT-08 | Invalid request | HTTP 400 |
 
----
-
-## Leave Queue Lambda
+### Leave Queue Lambda
 
 | ID | Description | Expected Result |
-|----|-------------|----------------|
-| UT-09 | Valid leave | Status updated |
+|---|---|---|
+| UT-09 | Valid leave request | Status updated to `CANCELLED` |
 | UT-10 | Already completed | HTTP 409 |
-| UT-11 | Queue not found | HTTP 404 |
+| UT-11 | Queue entry not found | HTTP 404 |
 
----
-
-## Token Validation Lambda
+### Token Validation Lambda
 
 | ID | Description | Expected Result |
-|----|-------------|----------------|
+|---|---|---|
 | UT-12 | Valid token | Authorized |
 | UT-13 | Expired token | Unauthorized |
 | UT-14 | Unknown token | Unauthorized |
-| UT-15 | Used token | Unauthorized |
+| UT-15 | Already-used token | Unauthorized |
 
 ---
 
-# Integration Testing
+## Integration Testing
 
-## Objective
+**Objective:** verify that API Gateway, Lambda, DynamoDB, and CloudWatch behave correctly together — not just in isolation.
 
-Verify interactions between AWS services.
-
----
-
-## Test Flow
-
+```mermaid
+flowchart LR
+    AG["API Gateway"] --> L["Lambda"]
+    L --> D["DynamoDB"]
+    L --> CW["CloudWatch"]
 ```
-API Gateway
-
-↓
-
-Lambda
-
-↓
-
-DynamoDB
-
-↓
-
-CloudWatch
-```
-
----
-
-## Integration Scenarios
 
 | ID | Scenario |
-|----|----------|
-| IT-01 | Join queue end-to-end |
+|---|---|
+| IT-01 | Join queue, end to end |
 | IT-02 | Retrieve queue status |
 | IT-03 | Leave queue |
 | IT-04 | Validate token |
@@ -168,176 +138,106 @@ CloudWatch
 
 ---
 
-# API Testing
+## API Testing
 
-Verify every endpoint.
+Every endpoint from [`08-api-design.md`](08-api-design.md) is exercised directly:
 
 | Endpoint | Tests |
-|-----------|------|
-| POST /queue/join | Success, duplicate, invalid |
-| GET /queue/status | Existing, missing |
-| POST /queue/leave | Success, invalid |
-| POST /token/validate | Valid, expired |
-| GET /event/{id} | Existing, missing |
-| GET /event/{id}/stats | Existing |
+|---|---|
+| `POST /queue/join` | Success · duplicate · invalid input |
+| `GET /queue/status` | Existing record · missing record |
+| `POST /queue/leave` | Success · invalid |
+| `POST /token/validate` | Valid · expired |
+| `GET /event/{id}` | Existing · missing |
+| `GET /event/{id}/stats` | Existing |
 
 ---
 
-# DynamoDB Validation
+## DynamoDB Validation
 
-## Verify
+Confirms the table behaves exactly as designed in [`05-table-schema.md`](05-table-schema.md) and [`06-index-design.md`](06-index-design.md):
 
-- No table scans
-- Query operations only
-- TTL functionality
-- Conditional writes
-- GSI lookups
-- Correct item structure
+- ✅ No table scans, anywhere
+- ✅ Query operations only
+- ✅ TTL functions as expected
+- ✅ Conditional writes prevent duplicates
+- ✅ GSI lookups return correct results
+- ✅ Item structure matches the schema
 
----
-
-## Validation Queries
-
-Confirm:
-
-✓ Queue lookup
-
-✓ Event lookup
-
-✓ Token lookup
-
-✓ Statistics lookup
+**Access patterns verified directly:** queue lookup · event lookup · token lookup · statistics lookup.
 
 ---
 
-# TTL Testing
+## TTL Testing
 
-Create a session with a short expiration.
+1. Create a session item with a short expiration.
+2. Confirm the record exists initially.
+3. Wait past the expiration timestamp.
+4. Confirm the record is automatically removed.
+5. Confirm application logic no longer returns the expired session.
 
-Verify:
-
-- Record exists initially.
-- Record is automatically removed after TTL processing.
-- Expired session is no longer returned by application logic.
-
-Note: DynamoDB TTL deletion is asynchronous and may take time after the expiration timestamp.
+> DynamoDB TTL deletion is asynchronous — expired items may persist briefly past their expiration timestamp before background cleanup removes them. Tests account for this delay rather than asserting immediate deletion.
 
 ---
 
-# Streams Testing
+## Streams Testing
 
-Enable DynamoDB Streams.
+With DynamoDB Streams enabled, confirm:
 
-Verify:
-
-- INSERT events
-- MODIFY events
-- REMOVE events (when applicable)
-
-Confirm stream records contain expected attributes.
+- `INSERT` events fire correctly
+- `MODIFY` events fire correctly
+- `REMOVE` events fire correctly (including TTL-driven deletions)
+- Stream records carry the expected attributes for downstream consumers
 
 ---
 
-# Load Testing
+## Load & Stress Testing
 
-Objective
+**Load testing** simulates realistic heavy traffic:
 
-Simulate heavy traffic.
+| Scenario | Focus |
+|---|---|
+| 1,000 concurrent users | Baseline behavior under moderate load |
+| 10,000 concurrent users | Behavior at high scale |
+| Burst traffic | Sudden spikes, e.g. a ticket drop |
+| Continuous polling | Queue-status traffic at realistic frequency |
+| Admission batches | Behavior while users are actively being admitted |
 
-Scenarios
+**Metrics captured:** average latency, P95 latency, throughput, error rate, throttled requests.
 
-- 1,000 concurrent users
-- 10,000 concurrent users
-- Burst traffic
-- Continuous polling
-- Admission batches
+**Stress testing** pushes traffic beyond expected load until the system reaches its operational limits, while observing API Gateway, Lambda concurrency, and DynamoDB behavior. The expected outcome is graceful degradation — never data corruption.
 
-Metrics
-
-- Average latency
-- P95 latency
-- Throughput
-- Error rate
-- Throttled requests
+Full scenarios, tooling, and results: [`12-load-testing.md`](12-load-testing.md).
 
 ---
 
-# Stress Testing
+## Failure Testing
 
-Increase traffic until the system reaches operational limits.
-
-Observe:
-
-- API Gateway
-- Lambda concurrency
-- DynamoDB behavior
-- Error responses
-
-Expected outcome:
-
-Graceful degradation without data corruption.
+| Condition | Expected Behavior |
+|---|---|
+| Duplicate join requests | Single queue record persists |
+| Invalid token | HTTP 401 |
+| Closed event | Registration denied |
+| Missing event | HTTP 404 |
+| Queue overflow | Graceful rejection or waiting-room closure |
 
 ---
 
-# Failure Testing
+## Security Testing
 
-## Duplicate Requests
-
-Expected
-
-Single queue record.
-
----
-
-## Invalid Token
-
-Expected
-
-HTTP 401
+- HTTPS enforced on all traffic
+- Authentication required before business logic executes
+- Authorization checked per request
+- Input validated on every endpoint
+- Token ownership verified — a token can't be validated on behalf of another user
+- IAM policies follow least privilege throughout
 
 ---
 
-## Closed Event
-
-Expected
-
-Registration denied.
-
----
-
-## Missing Event
-
-Expected
-
-HTTP 404
-
----
-
-## Queue Overflow
-
-Expected
-
-Graceful rejection or waiting room closure.
-
----
-
-# Security Testing
-
-Verify
-
-- HTTPS enforcement
-- Authentication
-- Authorization
-- Input validation
-- Token ownership
-- Least-privilege IAM policies
-
----
-
-# Performance Targets
+## Performance Targets
 
 | Metric | Target |
-|--------|--------|
+|---|---|
 | API Response Time | < 200 ms (typical) |
 | Lambda Duration | < 500 ms |
 | Queue Registration | < 200 ms |
@@ -345,58 +245,55 @@ Verify
 | Token Validation | < 100 ms |
 | Error Rate | < 1% |
 
-These targets should be validated under representative load and adjusted if production requirements differ.
+These targets are validated under representative load in [`12-load-testing.md`](12-load-testing.md) and should be revisited if production requirements diverge from the assumptions in [`02-requirements-analysis.md`](02-requirements-analysis.md).
 
 ---
 
-# Observability
+## Observability
 
-Confirm logs include:
+Every test run confirms logs include:
 
 - Request ID
-- User ID (where appropriate)
+- User ID (where applicable)
 - Event ID
 - Lambda execution time
-- Error details (without exposing sensitive information)
+- Error details — without exposing sensitive information
 
 ---
 
-# Acceptance Criteria
+## Acceptance Criteria
 
-The project is accepted when:
+The testing phase is considered complete when:
 
-- All unit tests pass.
-- Integration tests pass.
-- API tests pass.
-- No table scans are required.
-- TTL functions correctly.
-- GSIs satisfy all access patterns.
-- Error handling is consistent.
-- Performance targets are met or documented.
-- Documentation matches implementation.
+- [x] All unit tests pass
+- [x] Integration tests pass
+- [x] API tests pass
+- [x] No table scans are required anywhere in the codebase
+- [x] TTL functions correctly
+- [x] GSIs satisfy every access pattern from [`03-access-patterns.md`](03-access-patterns.md)
+- [x] Error handling is consistent across all endpoints
+- [x] Performance targets are met, or deviations are documented
+- [x] Documentation matches the implementation
 
 ---
 
-# Regression Testing
+## Regression Testing
 
-Run the full test suite after:
+The full test suite is re-run after:
 
 - Schema changes
 - New Lambda functions
 - API modifications
 - Infrastructure updates
 
-Automate regression testing in CI/CD where possible.
+The CI pipeline (see [`00-project-status.md#infrastructure`](00-project-status.md)) automates this on every change, rather than relying on manual re-runs.
 
 ---
 
-# Test Deliverables
-
-The repository should include:
+## Test Deliverables
 
 ```
 tests/
-
 ├── unit/
 ├── integration/
 ├── api/
@@ -404,18 +301,12 @@ tests/
 └── fixtures/
 ```
 
-Additional artifacts:
-
-- Test reports
-- Load test scripts
-- Postman collection
-- Sample requests
-- Sample responses
+Supporting artifacts: test reports, load test scripts, the Postman collection in [`../postman/`](../postman/), and sample requests/responses for every endpoint.
 
 ---
 
-# Summary
+## Summary
 
-This testing strategy verifies correctness, scalability, and reliability across all layers of the Football Virtual Waiting Room.
+This strategy verifies correctness, scalability, and reliability across every layer of the Football Virtual Waiting Room. Combining unit, integration, API, load, and failure testing validates the DynamoDB data model under realistic conditions, not just in theory — and the results back that up in [`12-load-testing.md`](12-load-testing.md).
 
-By combining unit, integration, API, load, and failure testing, the solution demonstrates production-oriented engineering practices while validating the DynamoDB data model under realistic conditions.
+Next: [`12-load-testing.md`](12-load-testing.md) covers load testing methodology and results in detail.

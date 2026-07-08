@@ -1,245 +1,190 @@
-# Load Testing Strategy
+# 📈 Load Testing Strategy
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/12-load-testing.md`
 
-Version: 1.0
-
----
-
-# Purpose
-
-This document defines the performance validation strategy for the Football Virtual Waiting Room.
-
-The objective is to verify that the system can handle extremely high traffic while maintaining acceptable latency, availability, and DynamoDB performance.
-
-Unlike functional testing, load testing focuses on system behavior under sustained and burst workloads.
+← [Back: Testing Plan](11-testing-plan.md) · Next: [Cost Estimation →](13-cost-estimation.md)
 
 ---
 
-# Objectives
+## Table of Contents
 
-The load tests should verify:
+- [Purpose](#purpose)
+- [Objectives](#objectives)
+- [Workload Profiles](#workload-profiles)
+- [Load Levels](#load-levels)
+- [Test Scenarios](#test-scenarios)
+- [Metrics Collected](#metrics-collected)
+- [Success Criteria](#success-criteria)
+- [Test Tools](#test-tools)
+- [Example k6 Workloads](#example-k6-workloads)
+- [Monitoring](#monitoring)
+- [Bottleneck Analysis](#bottleneck-analysis)
+- [Failure Conditions](#failure-conditions)
+- [Reporting](#reporting)
+- [Optimization Recommendations](#optimization-recommendations)
+- [Summary](#summary)
 
-- API responsiveness
+---
+
+## Purpose
+
+This document defines the performance validation strategy for the Football Virtual Waiting Room — the load-testing half of the broader plan in [`11-testing-plan.md`](11-testing-plan.md).
+
+Functional testing confirms the system behaves correctly. Load testing confirms it stays correct, responsive, and cost-efficient under the kind of sustained and burst traffic a real ticket release produces.
+
+---
+
+## Objectives
+
+Load tests verify:
+
+- API responsiveness under load
 - DynamoDB scalability
 - Lambda scalability
 - Admission throughput
-- Queue fairness
-- Error handling
+- Queue fairness, even while under stress
+- Error handling at scale
 - Cost efficiency under load
 
 ---
 
-# Workload Profiles
+## Workload Profiles
 
-The waiting room experiences several distinct traffic patterns.
+The waiting room sees several distinct traffic shapes, not one uniform load. Each is modeled separately.
 
-## Profile 1 — Registration Spike
+### Profile 1 — Registration Spike
 
-Occurs when ticket sales begin.
+Occurs the moment ticket sales open.
 
-Characteristics:
+| | |
+|---|---|
+| **Characteristics** | Millions of concurrent users · very high write throughput · short duration · bursty |
+| **Operations** | `POST /queue/join` |
+| **Primary AWS Services** | API Gateway · Lambda · DynamoDB |
 
-- Millions of concurrent users
-- Very high write throughput
-- Short duration
-- Burst traffic
+### Profile 2 — Queue Polling
 
-Operations:
+Sustained traffic after users have already joined.
 
-- POST /queue/join
+| | |
+|---|---|
+| **Characteristics** | Continuous · read-heavy · long duration |
+| **Operations** | `GET /queue/status` |
 
-Primary AWS Services:
+This is the profile that matters most in practice, since queue-status polling makes up the dominant share of expected traffic, per the distribution modeled in [`03-access-patterns.md#expected-request-distribution`](03-access-patterns.md#expected-request-distribution).
 
-- API Gateway
-- Lambda
-- DynamoDB
+### Profile 3 — Admission
 
----
+Periodic batch processing of waiting users.
 
-## Profile 2 — Queue Polling
+| | |
+|---|---|
+| **Operations** | Query queue · update queue entries · generate tokens |
 
-Occurs after users have joined.
+### Profile 4 — Token Validation
 
-Characteristics:
+Occurs as admitted users move into ticket purchasing.
 
-- Continuous traffic
-- Read-heavy
-- Long duration
-
-Operations:
-
-- GET /queue/status
-
----
-
-## Profile 3 — Admission
-
-Periodic processing of waiting users.
-
-Operations:
-
-- Query queue
-- Update queue entries
-- Generate tokens
+| | |
+|---|---|
+| **Operations** | `POST /token/validate` |
 
 ---
 
-## Profile 4 — Token Validation
-
-Occurs when admitted users access ticket purchasing.
-
-Operations:
-
-- POST /token/validate
-
----
-
-# Load Levels
+## Load Levels
 
 | Stage | Concurrent Users |
-|--------|------------------|
+|---|---|
 | Small | 100 |
 | Medium | 1,000 |
 | Large | 10,000 |
 | Stress | 50,000 |
 | Extreme (simulation) | 100,000+ |
 
-Note: Simulating millions of clients is generally impractical in a development environment. Instead, extrapolate results from controlled high-concurrency tests and monitor AWS service scaling.
+> Simulating millions of real clients isn't practical in a development environment. Instead, results from controlled high-concurrency runs are extrapolated, and AWS service scaling is monitored directly for signs it won't hold at higher volumes.
 
 ---
 
-# Test Scenarios
+## Test Scenarios
 
-## Scenario 1 — Join Queue
+### Scenario 1 — Join Queue
 
-Users continuously submit queue registration requests.
+Users continuously submit registration requests.
 
-Expected:
+**Expected:** successful registrations · no duplicate entries · stable latency · no table scans.
 
-- Successful registrations
-- No duplicate entries
-- Stable latency
-- No table scans
-
----
-
-## Scenario 2 — Queue Status Polling
+### Scenario 2 — Queue Status Polling
 
 Users poll queue status every few seconds.
 
-Expected:
+**Expected:** consistent response times · low DynamoDB read latency · minimal throttling.
 
-- Consistent response times
-- Low DynamoDB read latency
-- Minimal throttling
+### Scenario 3 — Mixed Traffic
 
----
+A blended profile approximating real-world behavior:
 
-## Scenario 3 — Mixed Traffic
+| Traffic Type | Share |
+|---|---|
+| Join Queue | 20% |
+| Queue Status | 65% |
+| Token Validation | 10% |
+| Event Lookup | 5% |
 
-Traffic distribution:
+**Expected:** the system stays responsive under this realistic mix, not just under single-operation tests.
 
-- 20% Join Queue
-- 65% Queue Status
-- 10% Token Validation
-- 5% Event Lookup
+### Scenario 4 — Admission Processing
 
-Expected:
+The admission service processes users in batches while client traffic continues in parallel.
 
-System remains responsive under realistic mixed workloads.
-
----
-
-## Scenario 4 — Admission Processing
-
-The admission service processes users in batches while client traffic continues.
-
-Expected:
-
-- Ordered admission
-- Stable API performance
-- No inconsistent queue states
+**Expected:** ordered admission · stable API performance throughout · no inconsistent queue states.
 
 ---
 
-# Metrics
+## Metrics Collected
 
-The following metrics should be collected.
+### API Gateway
 
-## API Gateway
+Request count · latency · integration latency · 4XX errors · 5XX errors.
 
-- Request Count
-- Latency
-- Integration Latency
-- 4XX Errors
-- 5XX Errors
+### Lambda
 
----
+Invocations · duration · concurrent executions · throttles · errors.
 
-## Lambda
+### DynamoDB
 
-- Invocations
-- Duration
-- Concurrent Executions
-- Throttles
-- Errors
+Read capacity consumption · write capacity consumption · successful requests · throttled requests · system errors · latency.
+
+### Client-Side
+
+Average response time · P95 latency · P99 latency · error rate · requests per second.
 
 ---
 
-## DynamoDB
-
-- Read Capacity Consumption
-- Write Capacity Consumption
-- Successful Requests
-- Throttled Requests
-- System Errors
-- Latency
-
----
-
-## Client Metrics
-
-- Average Response Time
-- P95 Latency
-- P99 Latency
-- Error Rate
-- Requests per Second
-
----
-
-# Success Criteria
+## Success Criteria
 
 | Metric | Target |
-|---------|---------|
+|---|---|
 | Average API Latency | < 200 ms |
 | P95 Latency | < 500 ms |
 | Error Rate | < 1% |
 | DynamoDB Throttles | 0 (or investigated if observed) |
-| Lambda Errors | 0 (expected during normal operation) |
+| Lambda Errors | 0 under normal operation |
 
-Targets should be interpreted relative to workload, region, and AWS account quotas.
-
----
-
-# Test Tools
-
-Recommended:
-
-- k6
-- Artillery
-- Locust
-
-Optional:
-
-- JMeter
-- Gatling
+These targets mirror the ones in [`11-testing-plan.md#performance-targets`](11-testing-plan.md#performance-targets), and should be read relative to workload shape, AWS region, and account-level service quotas.
 
 ---
 
-# Example k6 Workloads
+## Test Tools
 
-## Registration Spike
+**Primary:** k6 · Artillery · Locust
+
+**Optional:** JMeter · Gatling
+
+---
+
+## Example k6 Workloads
+
+**Registration spike:**
 
 ```javascript
 export default function () {
@@ -247,9 +192,7 @@ export default function () {
 }
 ```
 
----
-
-## Queue Polling
+**Queue polling:**
 
 ```javascript
 export default function () {
@@ -257,11 +200,13 @@ export default function () {
 }
 ```
 
+Full scripts live in `tests/load/`, referenced from the repository structure in [`00-project-status.md`](00-project-status.md#repository-structure).
+
 ---
 
-# Monitoring
+## Monitoring
 
-CloudWatch dashboards should display:
+CloudWatch dashboards display, in real time during each run:
 
 - API latency
 - Lambda concurrency
@@ -271,50 +216,41 @@ CloudWatch dashboards should display:
 
 ---
 
-# Bottleneck Analysis
+## Bottleneck Analysis
 
-Possible bottlenecks include:
+Likely bottleneck candidates, in rough order of expectation:
 
-- API Gateway throttling
-- Lambda concurrency limits
-- DynamoDB hot partitions
-- Excessive client polling
+| Bottleneck | Where it shows up |
+|---|---|
+| API Gateway throttling | Sustained high-concurrency runs |
+| Lambda concurrency limits | Sudden registration spikes |
+| DynamoDB hot partitions | A single wildly popular event |
+| Excessive client polling | Long-running queue-status scenarios |
 
-Each bottleneck should be investigated and documented if encountered.
+Every bottleneck actually observed during testing is investigated and documented rather than tuned away silently — the reasoning behind any resulting design change belongs in [`14-optimization.md`](14-optimization.md).
 
 ---
 
-# Failure Conditions
+## Failure Conditions
 
-The system fails the load test if:
+A load test run is considered failed if:
 
-- High error rates persist
+- High error rates persist rather than recovering
 - Queue entries become inconsistent
-- Duplicate registrations occur
-- Latency becomes unacceptable for the defined workload
-- DynamoDB experiences sustained throttling without mitigation
+- Duplicate registrations occur under concurrent load
+- Latency exceeds what's acceptable for the tested workload
+- DynamoDB experiences sustained throttling with no mitigation in place
 
 ---
 
-# Reporting
+## Reporting
 
-Each test run should capture:
+Each run captures: date, workload profile, concurrent users, duration, throughput, average latency, P95 latency, error rate, observations, and recommendations.
 
-- Date
-- Workload profile
-- Concurrent users
-- Duration
-- Throughput
-- Average latency
-- P95 latency
-- Error rate
-- Observations
-- Recommendations
-
-Example report:
+**Example report:**
 
 | Metric | Result |
-|---------|--------|
+|---|---|
 | Concurrent Users | 10,000 |
 | Duration | 15 min |
 | Avg Latency | 145 ms |
@@ -324,18 +260,22 @@ Example report:
 
 ---
 
-# Optimization Recommendations
+## Optimization Recommendations
 
-If testing identifies bottlenecks, consider:
+Where testing surfaces a real bottleneck, the options are:
 
 - Adaptive retry with exponential backoff
-- WebSocket or Server-Sent Events to reduce polling
-- Write sharding for high-ingest events
-- Batch operations where appropriate
-- CloudWatch alarms for proactive monitoring
+- WebSocket or Server-Sent Events, to cut down on raw polling volume
+- Write sharding for events with extreme registration spikes (see [`04-data-model.md#sharding-strategy`](04-data-model.md#sharding-strategy))
+- Batch operations where the access pattern allows it
+- CloudWatch alarms tuned for proactive detection, not just after-the-fact review
+
+The full breakdown of which of these were actually needed, and why, is in [`14-optimization.md`](14-optimization.md).
 
 ---
 
-# Summary
+## Summary
 
-This load-testing strategy validates that the Football Virtual Waiting Room remains responsive, consistent, and scalable under realistic traffic patterns while providing measurable evidence that the DynamoDB design supports high-demand event workloads.
+This strategy validates that the Football Virtual Waiting Room stays responsive, consistent, and scalable under traffic that actually resembles a high-demand ticket release — and gives measurable evidence that the DynamoDB design in [`05-table-schema.md`](05-table-schema.md) holds up under that load, not just on paper.
+
+Next: [`13-cost-estimation.md`](13-cost-estimation.md) translates this traffic modeling into an expected AWS cost profile.

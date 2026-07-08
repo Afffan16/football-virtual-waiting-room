@@ -1,22 +1,37 @@
-# Performance Optimization Guide
+# ⚙️ Performance Optimization Guide
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/14-optimization.md`
 
-Version: 1.0
-
----
-
-# Purpose
-
-This document describes the optimization strategies applied to the Football Virtual Waiting Room and identifies future improvements that can increase scalability, reduce latency, and minimize operational costs.
-
-The optimizations focus primarily on Amazon DynamoDB while also considering API Gateway, AWS Lambda, and overall system architecture.
+← [Back: Cost Estimation](13-cost-estimation.md) · Next: [Final Solution →](15-final-solution.md)
 
 ---
 
-# Optimization Goals
+## Table of Contents
 
-The solution aims to achieve:
+- [Purpose](#purpose)
+- [Optimization Goals](#optimization-goals)
+- [DynamoDB Optimizations](#dynamodb-optimizations)
+- [Lambda Optimizations](#lambda-optimizations)
+- [API Gateway Optimizations](#api-gateway-optimizations)
+- [CloudWatch Optimization](#cloudwatch-optimization)
+- [Cost Optimization](#cost-optimization)
+- [Scalability Considerations](#scalability-considerations)
+- [Security Optimizations](#security-optimizations)
+- [Operational Best Practices](#operational-best-practices)
+- [Lessons Learned](#lessons-learned)
+- [Summary](#summary)
+
+---
+
+## Purpose
+
+This document describes the optimization strategies applied to the Football Virtual Waiting Room, and identifies future improvements that could push scalability further, reduce latency, or lower operational cost beyond what's already covered in [`13-cost-estimation.md`](13-cost-estimation.md).
+
+The focus is primarily DynamoDB, since that's where most of the cost and latency lives — but API Gateway, Lambda, and the overall architecture are covered too.
+
+---
+
+## Optimization Goals
 
 - Single-digit millisecond database latency where practical
 - High throughput
@@ -27,153 +42,86 @@ The solution aims to achieve:
 
 ---
 
-# DynamoDB Optimizations
+## DynamoDB Optimizations
 
-## Single Table Design
+### Single Table Design
 
-A single-table design minimizes the number of database requests and avoids unnecessary joins.
+Keeping every entity in one table minimizes the number of round trips a single request needs and avoids joins entirely.
 
-Benefits
+**Benefits:** lower latency, reduced complexity, better scalability. Full reasoning: [`04-data-model.md`](04-data-model.md).
 
-- Lower latency
-- Reduced complexity
-- Better scalability
+### Access Pattern Driven Design
 
----
+Every attribute and index exists because a specific query in [`03-access-patterns.md`](03-access-patterns.md) needs it — nothing was added speculatively.
 
-## Access Pattern Driven Design
+**Benefits:** no table scans, predictable performance, lower read costs.
 
-Every attribute and index exists to satisfy a specific application query.
+### Query Instead of Scan
 
-Benefits
+Every data retrieval operation uses `GetItem` or `Query`. Table scans are avoided deliberately, not just by convention.
 
-- No table scans
-- Predictable performance
-- Lower read costs
+### Conditional Writes
 
----
-
-## Query Instead of Scan
-
-All data retrieval operations use:
-
-- GetItem
-- Query
-
-Table scans are intentionally avoided.
-
----
-
-## Conditional Writes
-
-Conditional expressions prevent:
-
-- Duplicate queue registrations
-- Race conditions
-- Lost updates
-
-Example
+Conditional expressions prevent duplicate queue registrations, race conditions, and lost updates:
 
 ```
 attribute_not_exists(PK)
 ```
 
----
+### Time To Live (TTL)
 
-## Time To Live (TTL)
+TTL automatically removes expired sessions and admission tokens.
 
-TTL automatically removes:
+**Benefits:** lower storage cost, no cleanup jobs, simpler maintenance. Full reasoning: [`04-data-model.md#time-to-live-ttl`](04-data-model.md#time-to-live-ttl).
 
-- Expired sessions
-- Admission tokens
+### Sparse Global Secondary Indexes
 
-Benefits
+Only item types that actually need an alternate access pattern populate an index — GSI2, for example, contains only `TOKEN` items.
 
-- Lower storage costs
-- No cleanup jobs
-- Simplified maintenance
+**Benefits:** smaller indexes, faster queries, reduced write amplification. Full reasoning: [`06-index-design.md#sparse-indexes`](06-index-design.md#sparse-indexes).
 
----
+### Projection Optimization
 
-## Sparse Global Secondary Indexes
+Each GSI projects only the attributes its access pattern actually needs.
 
-Only item types that require alternate access patterns are indexed.
+**Benefits:** lower storage, reduced write cost.
 
-Benefits
+### Immutable Queue Positions
 
-- Smaller indexes
-- Faster queries
-- Reduced write amplification
+Queue positions are assigned once and never rewritten — only the `status` field changes as a user moves through the queue.
+
+**Benefits:** fewer writes, simpler logic, better consistency. Full reasoning: [`04-data-model.md#queue-position-strategy`](04-data-model.md#queue-position-strategy).
 
 ---
 
-## Projection Optimization
+## Lambda Optimizations
 
-Each GSI projects only the attributes required by its access pattern.
-
-Benefits
-
-- Lower storage
-- Reduced write costs
-
----
-
-## Immutable Queue Positions
-
-Queue positions never change after assignment.
-
-Only status transitions occur.
-
-Benefits
-
-- Fewer writes
-- Simpler logic
-- Better consistency
-
----
-
-# Lambda Optimizations
-
-Recommended practices
-
-- Reuse DynamoDB clients across invocations
+- Reuse DynamoDB clients across invocations instead of recreating them per request
 - Minimize cold start impact
-- Keep functions single-purpose
-- Use structured logging
-- Handle retries gracefully
+- Keep every function single-purpose, per [`00-project-status.md#lambda-responsibilities`](00-project-status.md#lambda-responsibilities)
+- Use structured logging throughout
+- Handle retries gracefully rather than failing hard on transient errors
 
 ---
 
-# API Gateway Optimizations
+## API Gateway Optimizations
 
-Configure:
-
-- Request validation
+- Request validation at the gateway, before Lambda is even invoked
 - Usage plans
 - Throttling
-- Caching (where appropriate)
+- Caching, where the access pattern tolerates it
 
-These controls improve reliability and protect backend services.
-
----
-
-# CloudWatch Optimization
-
-Monitor:
-
-- Lambda duration
-- Error rates
-- API latency
-- DynamoDB throttling
-- Admission throughput
-
-Create alarms for abnormal behavior.
+These controls improve reliability and shield the backend from traffic it doesn't need to see directly.
 
 ---
 
-# Cost Optimization
+## CloudWatch Optimization
 
-Strategies include:
+Monitored continuously: Lambda duration, error rates, API latency, DynamoDB throttling, and admission throughput — with alarms configured for abnormal behavior rather than relying on manual review. See the monitoring targets in [`07-system-architecture.md#monitoring`](07-system-architecture.md#monitoring).
+
+---
+
+## Cost Optimization
 
 - DynamoDB On-Demand billing
 - Automatic TTL cleanup
@@ -181,74 +129,42 @@ Strategies include:
 - Efficient attribute projection
 - Stateless Lambda functions
 
----
-
-# Scalability Considerations
-
-## Current Design
-
-Supports:
-
-- High concurrent reads
-- High concurrent writes
-- Multiple simultaneous events
-- Automatic scaling
+Full breakdown: [`13-cost-estimation.md`](13-cost-estimation.md).
 
 ---
 
-## Future Enhancements
+## Scalability Considerations
 
-### Write Sharding
+### Current Design
 
-Distribute queue entries across multiple logical shards to reduce hot partitions during extreme registration bursts.
+Already supports high concurrent reads, high concurrent writes, multiple simultaneous events, and automatic scaling — without any additional work.
 
----
+### Future Enhancements
 
-### Push-Based Updates
+**Write sharding:** distribute queue entries across multiple logical shards to reduce hot partitions during extreme registration bursts. The key structure already supports this as an additive change — see [`05-table-schema.md#future-scalability`](05-table-schema.md#future-scalability) and [`04-data-model.md#sharding-strategy`](04-data-model.md#sharding-strategy).
 
-Replace frequent polling with:
+**Push-based updates:** replace frequent polling with API Gateway WebSocket APIs or Server-Sent Events. Fewer reads, lower latency, better user experience — this is the single change most likely to move the needle, since queue-status polling is the dominant traffic source identified in [`03-access-patterns.md#expected-request-distribution`](03-access-patterns.md#expected-request-distribution).
 
-- API Gateway WebSocket APIs
-- Server-Sent Events
+**Global Tables:** replicate data across AWS regions for disaster recovery and lower latency for geographically distributed users.
 
-Benefits
+**Distributed admission workers:** multiple workers processing independent queue partitions in parallel, while still preserving fairness.
 
-- Fewer reads
-- Lower latency
-- Better user experience
+**Caching:** introduce Amazon ElastiCache (Redis) only if repeated low-latency reads actually become a bottleneck — not preemptively.
 
 ---
 
-### Global Tables
-
-Replicate data across AWS Regions for disaster recovery and lower latency for geographically distributed users.
-
----
-
-### Distributed Admission Workers
-
-Multiple admission workers can process independent queue partitions while maintaining fairness.
-
----
-
-### Caching
-
-Introduce Amazon ElastiCache (Redis) only if repeated low-latency reads become a bottleneck.
-
----
-
-# Security Optimizations
+## Security Optimizations
 
 - IAM least privilege
 - Encryption at rest
 - Encryption in transit
-- Token expiration
+- Token expiration strictly enforced
 - Input validation
 - Rate limiting
 
 ---
 
-# Operational Best Practices
+## Operational Best Practices
 
 - Infrastructure as Code
 - Automated deployments
@@ -259,16 +175,18 @@ Introduce Amazon ElastiCache (Redis) only if repeated low-latency reads become a
 
 ---
 
-# Lessons Learned
+## Lessons Learned
 
-- Design around access patterns, not entities.
-- Minimize indexes.
-- Avoid table scans.
-- Prefer immutable data where possible.
-- Build for observability from day one.
+- Design around access patterns, not entities — the whole schema in [`04-data-model.md`](04-data-model.md) and [`05-table-schema.md`](05-table-schema.md) exists because of this one decision made early, in [`02-requirements-analysis.md`](02-requirements-analysis.md).
+- Minimize indexes — every GSI has a real cost, so each one needs a real justification.
+- Avoid table scans, without exception.
+- Prefer immutable data where possible — the immutable queue position is the clearest example of how much this simplifies everything downstream.
+- Build for observability from day one, not as an afterthought once something breaks.
 
 ---
 
-# Summary
+## Summary
 
-The proposed optimizations ensure that the Football Virtual Waiting Room remains scalable, maintainable, and cost-effective while following AWS Well-Architected Framework principles and DynamoDB best practices.
+These optimizations keep the Football Virtual Waiting Room scalable, maintainable, and cost-effective, while staying aligned with the AWS Well-Architected Framework and DynamoDB best practices throughout.
+
+Next: [`15-final-solution.md`](15-final-solution.md) pulls everything together into the executive-level summary of the finished solution.

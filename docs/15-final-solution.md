@@ -1,37 +1,51 @@
-# Final Solution Overview
+# 🏁 Final Solution Overview
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/15-final-solution.md`
 
-Version: 1.0
-
----
-
-# Executive Summary
-
-The Football Virtual Waiting Room is a serverless application designed to manage extremely high-demand ticket releases.
-
-The solution uses Amazon DynamoDB as the primary datastore and follows an access-pattern-driven single-table design to provide low-latency, highly scalable queue management.
-
-The architecture leverages managed AWS services to minimize operational overhead while maximizing availability and scalability.
+← [Back: Optimization](14-optimization.md) · [Back to Project Status](00-project-status.md)
 
 ---
 
-# Business Problem
+## Table of Contents
 
-During ticket releases, millions of users may attempt to access the platform simultaneously.
+- [Executive Summary](#executive-summary)
+- [Business Problem](#business-problem)
+- [Solution Overview](#solution-overview)
+- [Architecture](#architecture)
+- [DynamoDB Design](#dynamodb-design)
+- [Key Features](#key-features)
+- [API Summary](#api-summary)
+- [Testing](#testing)
+- [Scalability](#scalability)
+- [Security](#security)
+- [Deployment](#deployment)
+- [Deliverables](#deliverables)
+- [Conclusion](#conclusion)
 
-Without a waiting room, backend systems risk:
+---
+
+## Executive Summary
+
+The Football Virtual Waiting Room is a serverless application built to manage extremely high-demand ticket releases. It uses Amazon DynamoDB as its primary datastore, following an access-pattern-driven single-table design to deliver low-latency, highly scalable queue management.
+
+The architecture leans entirely on managed AWS services, minimizing operational overhead while maximizing availability and scalability — the full end-to-end reasoning behind every decision here lives in [`docs/01`](01-challenge-details.md) through [`docs/14`](14-optimization.md); this document is the summary of where that reasoning landed.
+
+---
+
+## Business Problem
+
+During a popular ticket release, millions of users may try to access the platform at once. Without a waiting room in front of it, the backend risks:
 
 - Service outages
 - High latency
 - Ticket overselling
-- Poor user experience
+- A poor user experience across the board
 
-The waiting room protects downstream services by controlling user admission while preserving fairness.
+The waiting room protects downstream services by controlling admission while preserving fairness — first in, first served. Full problem framing: [`01-challenge-details.md`](01-challenge-details.md).
 
 ---
 
-# Solution Overview
+## Solution Overview
 
 The implemented solution provides:
 
@@ -43,139 +57,93 @@ The implemented solution provides:
 - Event management
 - Monitoring and observability
 
----
-
-# Architecture
-
-Core AWS services:
-
-- Amazon API Gateway
-- AWS Lambda
-- Amazon DynamoDB
-- DynamoDB Streams
-- Amazon CloudWatch
-- AWS IAM
-
-Optional future integrations:
-
-- Amazon EventBridge
-- Amazon ElastiCache
-- Global Tables
+Every one of these traces back to a functional requirement in [`02-requirements-analysis.md`](02-requirements-analysis.md) and a specific access pattern in [`03-access-patterns.md`](03-access-patterns.md) — nothing here was built speculatively.
 
 ---
 
-# DynamoDB Design
+## Architecture
 
-The database follows a Single Table Design.
+**Core AWS services:** Amazon API Gateway · AWS Lambda · Amazon DynamoDB · DynamoDB Streams · Amazon CloudWatch · AWS IAM.
 
-Entity types include:
+**Optional future integrations:** Amazon EventBridge · Amazon ElastiCache · Global Tables.
 
-- Event
-- User
-- Queue Entry
-- Session
-- Admission Token
-- Statistics
-
-The design satisfies all identified access patterns without requiring table scans.
+Full request flows, component responsibilities, and diagrams: [`07-system-architecture.md`](07-system-architecture.md).
 
 ---
 
-# Key Features
+## DynamoDB Design
+
+The database follows a Single Table Design with six entity types: Event, User, Queue Entry, Session, Admission Token, and Statistics.
+
+The design satisfies every access pattern identified in [`03-access-patterns.md`](03-access-patterns.md) without a single table scan — the physical schema is in [`05-table-schema.md`](05-table-schema.md), and the supporting GSIs are in [`06-index-design.md`](06-index-design.md).
+
+---
+
+## Key Features
 
 - Query-first data model
 - Conditional writes
 - Automatic TTL cleanup
 - Minimal GSIs
 - Immutable queue positions
-- Serverless architecture
+- Serverless architecture, end to end
 - Infrastructure as Code
 
----
-
-# API Summary
-
-The REST API provides endpoints for:
-
-- Join Queue
-- Queue Status
-- Leave Queue
-- Validate Token
-- Event Lookup
-- Queue Statistics
-- Administrative Admission
-
-Each endpoint maps directly to optimized DynamoDB operations.
+Each of these is covered in depth in [`14-optimization.md`](14-optimization.md), including why it was chosen over the alternatives.
 
 ---
 
-# Testing
+## API Summary
 
-The solution includes:
-
-- Unit tests
-- Integration tests
-- API tests
-- Load tests
-- Failure testing
-- Security validation
-
-Performance targets and acceptance criteria are documented separately.
+The REST API covers: join queue, queue status, leave queue, validate token, event lookup, queue statistics, and administrative admission. Each endpoint maps directly to an optimized DynamoDB operation — full contracts, request/response shapes, and error handling in [`08-api-design.md`](08-api-design.md).
 
 ---
 
-# Scalability
+## Testing
 
-The architecture supports:
-
-- Automatic Lambda scaling
-- DynamoDB On-Demand capacity
-- Multiple concurrent events
-- High request throughput
-
-Future enhancements such as write sharding and WebSocket updates are documented for production-scale deployments.
+The solution includes unit tests, integration tests, API tests, load tests, failure testing, and security validation. Performance targets and acceptance criteria are documented in [`11-testing-plan.md`](11-testing-plan.md), with load testing results specifically in [`12-load-testing.md`](12-load-testing.md).
 
 ---
 
-# Security
+## Scalability
 
-Security measures include:
+The architecture supports automatic Lambda scaling, DynamoDB On-Demand capacity, multiple concurrent events, and high request throughput out of the box. Future enhancements for production scale — write sharding, push-based updates over polling, distributed admission workers — are documented in [`14-optimization.md#scalability-considerations`](14-optimization.md#scalability-considerations).
 
-- HTTPS
+---
+
+## Security
+
+- HTTPS everywhere
 - IAM least privilege
 - Authentication
 - Authorization
-- Token expiration
+- Token expiration strictly enforced
 - Encryption at rest
 - Encryption in transit
 
 ---
 
-# Deployment
+## Deployment
 
-Deployment is automated using AWS SAM and CloudFormation.
-
-No manual infrastructure provisioning is required.
+Deployment is fully automated through AWS SAM and CloudFormation — no manual infrastructure provisioning anywhere in the process. See [`10-step-by-step-build.md`](10-step-by-step-build.md) for how the stack was actually built and deployed, step by step.
 
 ---
 
-# Deliverables
+## Deliverables
 
-The completed project includes:
-
-- Infrastructure as Code
-- Source code
-- Documentation
-- Test suite
-- Load testing scripts
+- Infrastructure as Code (`template.yaml`)
+- Source code (`src/`)
+- Full documentation set (`docs/00`–`docs/15`)
+- Test suite (`tests/`)
+- Load testing scripts (`tests/load/`, `scripts/`)
 - Deployment guide
 
+For the current, authoritative status of each of these, see [`00-project-status.md`](00-project-status.md).
+
 ---
 
-# Conclusion
+## Conclusion
 
-This project demonstrates modern serverless application design using AWS managed services and DynamoDB best practices.
+This project demonstrates modern serverless application design using AWS managed services and DynamoDB best practices, built specifically for the AWS Builder Center DynamoDB Data Modeling Challenge. It balances simplicity, scalability, and maintainability while staying true to that challenge's original objectives, laid out back in [`01-challenge-details.md`](01-challenge-details.md).
 
-The solution balances simplicity, scalability, and maintainability while remaining aligned with the objectives of the AWS Builder Center DynamoDB challenge.
-
-It also provides a foundation that can evolve into a production-grade virtual waiting room through incremental enhancements such as write sharding, push-based notifications, and multi-region deployments.
+It's also built as a genuine foundation, not just a submission — one that can grow into a production-grade virtual waiting room through the incremental enhancements already scoped out in [`14-optimization.md`](14-optimization.md): write sharding, push-based notifications, and multi-region deployment.
