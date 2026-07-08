@@ -399,7 +399,7 @@ Released under the [MIT License](LICENSE) — provided for educational and demon
 <div align="center">
 
 **Muhammad Affan bin Aamir**
-Junior Data Engineer · AWS Builder Community Member
+Software Engineer · Cloud Data Engineer · AWS Student Builder Group Leader
 
 [![GitHub](https://img.shields.io/badge/GitHub-Afffan16-181717?logo=github&logoColor=white)](https://github.com/Afffan16)
 
