@@ -212,7 +212,7 @@
 
         <div class="input-group">
             <label>Event ID</label>
-            <input type="text" id="eventId" value="MATCH123" placeholder="e.g. MATCH123">
+            <input type="text" id="eventId" value="1001" placeholder="e.g. 1001">
         </div>
         <div class="input-group">
             <label>User ID</label>
@@ -273,7 +273,7 @@ Using endpoint: https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod</div
 
     function getValues() {
         return {
-            eventId: document.getElementById('eventId').value || "MATCH123",
+            eventId: document.getElementById('eventId').value || "1001",
             userId: document.getElementById('userId').value || "FAN-001"
         };
     }

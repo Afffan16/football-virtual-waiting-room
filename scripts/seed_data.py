@@ -8,16 +8,17 @@ is ready to accept registrations.
 
 from __future__ import annotations
 
+import os
 import sys
 from typing import Any
 
 import boto3
 from botocore.exceptions import ClientError
 
-# Add src to python path to access common module if run from repository root
-sys.path.append("src")
+# Add src directory to python path to access common module
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
-from src.common.constants import (
+from common.constants import (
     ENTITY_EVENT,
     ENTITY_STATS,
     EVENT_OPEN,
@@ -26,7 +27,7 @@ from src.common.constants import (
     STATS_SK,
     TABLE_NAME,
 )
-from src.common.utils import utc_now_iso
+from common.utils import utc_now_iso
 
 
 def seed_database() -> None:

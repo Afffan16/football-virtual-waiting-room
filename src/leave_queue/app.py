@@ -56,8 +56,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return conflict(f"Cannot leave queue — current status is '{current_status}'.")
 
         # ----- Build primary key for update -----
-        queue_position = int(item.get("queuePosition", 0))
-        padded = str(queue_position).zfill(QUEUE_POSITION_PAD_LENGTH)
+        queue_position = item.get("queuePosition", "")
+        padded = queue_position
         pk = f"{EVENT_PREFIX}{event_id}"
         sk = f"{QUEUE_PREFIX}{padded}"
 
@@ -83,7 +83,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         # ----- Update statistics -----
         stats_pk = f"{EVENT_PREFIX}{event_id}"
-        atomic_increment(stats_pk, STATS_SK, "waitingUsers", increment=-1)
+        # Only increment cancelledUsers. We disabled waitingUsers increments in join_queue to avoid hot partitions.
         atomic_increment(stats_pk, STATS_SK, "cancelledUsers", increment=1)
 
         logger.info("User successfully left queue", extra={"queuePosition": queue_position})

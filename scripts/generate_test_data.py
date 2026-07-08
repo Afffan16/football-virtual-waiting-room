@@ -14,7 +14,7 @@ import boto3
 # Add src to python path to access common module if run from repository root
 sys.path.append("src")
 
-from src.common.constants import (
+from common.constants import (
     ENTITY_QUEUE,
     EVENT_PREFIX,
     GSI1PK,
@@ -27,8 +27,8 @@ from src.common.constants import (
     TABLE_NAME,
     USER_PREFIX,
 )
-from src.common.dynamodb import atomic_increment
-from src.common.utils import estimate_wait_minutes, format_queue_position, utc_now_iso
+from common.dynamodb import atomic_increment
+from common.utils import estimate_wait_minutes, format_queue_position, utc_now_iso
 
 
 def generate_users(count: int, event_id: str = "1001") -> None:
