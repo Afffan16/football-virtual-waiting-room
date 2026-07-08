@@ -1,0 +1,347 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Football Virtual Waiting Room — AWS Builder Center DynamoDB Data Modeling Challenge.
+  Serverless queue management system using Single Table Design.
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 256
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        TABLE_NAME: !Ref FootballWaitingRoomTable
+        LOG_LEVEL: INFO
+    LoggingConfig:
+      LogFormat: JSON
+
+Parameters:
+  StageName:
+    Type: String
+    Default: Prod
+    Description: API Gateway deployment stage name
+  TokenTTLMinutes:
+    Type: Number
+    Default: 15
+    Description: Admission token lifetime in minutes
+  SessionTTLMinutes:
+    Type: Number
+    Default: 30
+    Description: Session lifetime in minutes
+  DefaultBatchSize:
+    Type: Number
+    Default: 50
+    Description: Default admission batch size
+
+Resources:
+  # ==========================================================================
+  # DynamoDB Table — Single Table Design
+  # ==========================================================================
+  FootballWaitingRoomTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: FootballWaitingRoom
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+        - AttributeName: GSI1PK
+          AttributeType: S
+        - AttributeName: GSI1SK
+          AttributeType: S
+        - AttributeName: GSI2PK
+          AttributeType: S
+        - AttributeName: GSI2SK
+          AttributeType: S
+        - AttributeName: GSI3PK
+          AttributeType: S
+        - AttributeName: GSI3SK
+          AttributeType: S
+      GlobalSecondaryIndexes:
+        # GSI1 — User Queue Lookup
+        - IndexName: GSI1
+          KeySchema:
+            - AttributeName: GSI1PK
+              KeyType: HASH
+            - AttributeName: GSI1SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: INCLUDE
+            NonKeyAttributes:
+              - queuePosition
+              - status
+              - joinTime
+              - estimatedWait
+              - eventId
+              - userId
+              - entityType
+        # GSI2 — Token Lookup
+        - IndexName: GSI2
+          KeySchema:
+            - AttributeName: GSI2PK
+              KeyType: HASH
+            - AttributeName: GSI2SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: INCLUDE
+            NonKeyAttributes:
+              - tokenId
+              - userId
+              - eventId
+              - status
+              - expiresAt
+              - entityType
+        # GSI3 — Administrative Queue View
+        - IndexName: GSI3
+          KeySchema:
+            - AttributeName: GSI3PK
+              KeyType: HASH
+            - AttributeName: GSI3SK
+              KeyType: RANGE
+          Projection:
+            ProjectionType: INCLUDE
+            NonKeyAttributes:
+              - queuePosition
+              - status
+              - userId
+              - entityType
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: Project
+          Value: FootballWaitingRoom
+        - Key: Environment
+          Value: !Ref StageName
+
+  # ==========================================================================
+  # API Gateway
+  # ==========================================================================
+  WaitingRoomApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: !Ref StageName
+      Description: Football Virtual Waiting Room REST API
+      TracingEnabled: true
+      Cors:
+        AllowMethods: "'GET,POST,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Idempotency-Key'"
+        AllowOrigin: "'*'"
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          LoggingLevel: INFO
+          DataTraceEnabled: true
+          MetricsEnabled: true
+
+  # ==========================================================================
+  # Lambda Functions
+  # ==========================================================================
+
+  # --- Join Queue ---
+  JoinQueueFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: football-wr-join-queue
+      Description: Registers a user in the waiting room queue
+      CodeUri: src/
+      Handler: join_queue.app.lambda_handler
+      Environment:
+        Variables:
+          TOKEN_TTL_MINUTES: !Ref TokenTTLMinutes
+          SESSION_TTL_MINUTES: !Ref SessionTTLMinutes
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FootballWaitingRoomTable
+      Events:
+        JoinQueue:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitingRoomApi
+            Path: /queue/join
+            Method: POST
+
+  # --- Queue Status ---
+  QueueStatusFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: football-wr-queue-status
+      Description: Retrieves current queue status for a user
+      CodeUri: src/
+      Handler: queue_status.app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref FootballWaitingRoomTable
+      Events:
+        QueueStatus:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitingRoomApi
+            Path: /queue/status
+            Method: GET
+
+  # --- Leave Queue ---
+  LeaveQueueFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: football-wr-leave-queue
+      Description: Allows a user to voluntarily leave the queue
+      CodeUri: src/
+      Handler: leave_queue.app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FootballWaitingRoomTable
+      Events:
+        LeaveQueue:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitingRoomApi
+            Path: /queue/leave
+            Method: POST
+
+  # --- Admit Users ---
+  AdmitUsersFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: football-wr-admit-users
+      Description: Admits the next batch of waiting users
+      CodeUri: src/
+      Handler: admit_users.app.lambda_handler
+      Timeout: 60
+      Environment:
+        Variables:
+          DEFAULT_BATCH_SIZE: !Ref DefaultBatchSize
+          TOKEN_TTL_MINUTES: !Ref TokenTTLMinutes
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FootballWaitingRoomTable
+      Events:
+        AdmitUsers:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitingRoomApi
+            Path: /queue/admit
+            Method: POST
+
+  # --- Validate Token ---
+  ValidateTokenFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: football-wr-validate-token
+      Description: Validates an admission token before checkout
+      CodeUri: src/
+      Handler: validate_token.app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref FootballWaitingRoomTable
+      Events:
+        ValidateToken:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitingRoomApi
+            Path: /token/validate
+            Method: POST
+
+  # --- Event Lookup ---
+  EventLookupFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: football-wr-event-lookup
+      Description: Returns metadata for a football event
+      CodeUri: src/
+      Handler: event_lookup.app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref FootballWaitingRoomTable
+      Events:
+        EventLookup:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitingRoomApi
+            Path: /event/{eventId}
+            Method: GET
+
+  # --- Statistics ---
+  StatisticsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: football-wr-statistics
+      Description: Returns aggregate queue statistics for an event
+      CodeUri: src/
+      Handler: statistics.app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref FootballWaitingRoomTable
+      Events:
+        Statistics:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitingRoomApi
+            Path: /event/{eventId}/stats
+            Method: GET
+
+# ==========================================================================
+# Outputs
+# ==========================================================================
+Outputs:
+  WaitingRoomApiUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub "https://${WaitingRoomApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${StageName}/"
+
+  FootballWaitingRoomTableName:
+    Description: DynamoDB table name
+    Value: !Ref FootballWaitingRoomTable
+
+  FootballWaitingRoomTableArn:
+    Description: DynamoDB table ARN
+    Value: !GetAtt FootballWaitingRoomTable.Arn
+
+  FootballWaitingRoomStreamArn:
+    Description: DynamoDB Streams ARN
+    Value: !GetAtt FootballWaitingRoomTable.StreamArn
+
+  JoinQueueFunctionArn:
+    Description: Join Queue Lambda ARN
+    Value: !GetAtt JoinQueueFunction.Arn
+
+  QueueStatusFunctionArn:
+    Description: Queue Status Lambda ARN
+    Value: !GetAtt QueueStatusFunction.Arn
+
+  LeaveQueueFunctionArn:
+    Description: Leave Queue Lambda ARN
+    Value: !GetAtt LeaveQueueFunction.Arn
+
+  AdmitUsersFunctionArn:
+    Description: Admit Users Lambda ARN
+    Value: !GetAtt AdmitUsersFunction.Arn
+
+  ValidateTokenFunctionArn:
+    Description: Validate Token Lambda ARN
+    Value: !GetAtt ValidateTokenFunction.Arn
+
+  EventLookupFunctionArn:
+    Description: Event Lookup Lambda ARN
+    Value: !GetAtt EventLookupFunction.Arn
+
+  StatisticsFunctionArn:
+    Description: Statistics Lambda ARN
+    Value: !GetAtt StatisticsFunction.Arn

@@ -1,0 +1,206 @@
+{
+	"info": {
+		"_postman_id": "football-waiting-room-collection",
+		"name": "Football Virtual Waiting Room",
+		"description": "API collection for the Football Virtual Waiting Room — AWS Builder Center DynamoDB Challenge.\n\nExecute requests in order:\n1. Event Lookup (verify event exists)\n2. Join Queue\n3. Queue Status\n4. Queue Statistics\n5. Admit Users\n6. Validate Token\n7. Leave Queue",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "https://YOUR_API_ID.execute-api.YOUR_REGION.amazonaws.com/Prod",
+			"type": "string"
+		},
+		{
+			"key": "eventId",
+			"value": "1001",
+			"type": "string"
+		},
+		{
+			"key": "userId",
+			"value": "user_001",
+			"type": "string"
+		},
+		{
+			"key": "token",
+			"value": "",
+			"type": "string"
+		}
+	],
+	"item": [
+		{
+			"name": "1. Event Lookup",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/event/{{eventId}}",
+					"host": ["{{baseUrl}}"],
+					"path": ["event", "{{eventId}}"]
+				},
+				"description": "Retrieve metadata for a football event. Verifies the event exists and returns match details."
+			},
+			"response": []
+		},
+		{
+			"name": "2. Join Queue",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"if (pm.response.code === 201) {",
+							"    var jsonData = pm.response.json();",
+							"    pm.collectionVariables.set('queuePosition', jsonData.queuePosition);",
+							"    console.log('Queue Position: ' + jsonData.queuePosition);",
+							"}"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"eventId\": \"{{eventId}}\",\n  \"userId\": \"{{userId}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/queue/join",
+					"host": ["{{baseUrl}}"],
+					"path": ["queue", "join"]
+				},
+				"description": "Register a user in the waiting room queue. Returns queue position and estimated wait time."
+			},
+			"response": []
+		},
+		{
+			"name": "3. Queue Status",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/queue/status?eventId={{eventId}}&userId={{userId}}",
+					"host": ["{{baseUrl}}"],
+					"path": ["queue", "status"],
+					"query": [
+						{
+							"key": "eventId",
+							"value": "{{eventId}}"
+						},
+						{
+							"key": "userId",
+							"value": "{{userId}}"
+						}
+					]
+				},
+				"description": "Check the current queue position and status for a registered user."
+			},
+			"response": []
+		},
+		{
+			"name": "4. Queue Statistics",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{baseUrl}}/event/{{eventId}}/stats",
+					"host": ["{{baseUrl}}"],
+					"path": ["event", "{{eventId}}", "stats"]
+				},
+				"description": "Retrieve aggregate queue statistics for an event (waiting, admitted, total users, etc.)."
+			},
+			"response": []
+		},
+		{
+			"name": "5. Admit Users",
+			"event": [
+				{
+					"listen": "test",
+					"script": {
+						"type": "text/javascript",
+						"exec": [
+							"if (pm.response.code === 200) {",
+							"    var jsonData = pm.response.json();",
+							"    console.log('Admitted: ' + jsonData.admittedUsers);",
+							"    console.log('Remaining: ' + jsonData.remainingQueue);",
+							"}"
+						]
+					}
+				}
+			],
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"eventId\": \"{{eventId}}\",\n  \"batchSize\": 5\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/queue/admit",
+					"host": ["{{baseUrl}}"],
+					"path": ["queue", "admit"]
+				},
+				"description": "Admit the next batch of waiting users. Generates admission tokens with TTL for each admitted user."
+			},
+			"response": []
+		},
+		{
+			"name": "6. Validate Token",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"token\": \"{{token}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/token/validate",
+					"host": ["{{baseUrl}}"],
+					"path": ["token", "validate"]
+				},
+				"description": "Validate an admission token. Checks if the token exists, is ACTIVE, and has not expired."
+			},
+			"response": []
+		},
+		{
+			"name": "7. Leave Queue",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"eventId\": \"{{eventId}}\",\n  \"userId\": \"{{userId}}\"\n}"
+				},
+				"url": {
+					"raw": "{{baseUrl}}/queue/leave",
+					"host": ["{{baseUrl}}"],
+					"path": ["queue", "leave"]
+				},
+				"description": "Voluntarily leave the queue. Changes status from WAITING to CANCELLED and updates statistics."
+			},
+			"response": []
+		}
+	]
+}

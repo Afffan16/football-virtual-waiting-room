@@ -1,0 +1,45 @@
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# IDEs
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Python
+.pytest_cache/
+.coverage
+htmlcov/
+
+# SAM
+.aws-sam/
+
+# AWS
+.aws/
+
+# Logs
+*.log
+
+# Environment Variables
+.env
+.env.*
+
+# Build
+dist/
+build/
+
+# Misc
+*.sqlite3
+*.db
