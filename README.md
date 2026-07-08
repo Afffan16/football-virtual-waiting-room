@@ -6,7 +6,6 @@
 
 *AWS Builder Center — DynamoDB Data Modeling Challenge*
 
-[![CI](https://github.com/Afffan16/football-virtual-waiting-room/actions/workflows/ci.yml/badge.svg)](https://github.com/Afffan16/football-virtual-waiting-room/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![AWS SAM](https://img.shields.io/badge/AWS-SAM-FF9900?logo=amazonaws&logoColor=white)
 ![DynamoDB](https://img.shields.io/badge/Amazon-DynamoDB-4053D6?logo=amazondynamodb&logoColor=white)
