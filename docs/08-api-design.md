@@ -1,95 +1,77 @@
-# REST API Design
+# 🔌 REST API Design
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/08-api-design.md`
 
-Version: 1.0
-
----
-
-# Purpose
-
-This document defines the REST API for the Football Virtual Waiting Room.
-
-The API provides endpoints for:
-
-- Queue management
-- Queue status
-- Admission
-- Token validation
-- Administrative operations
-
-The APIs are designed to be stateless, idempotent where applicable, and suitable for deployment behind Amazon API Gateway.
+← [Back: System Architecture](07-system-architecture.md) · Next: [Implementation Plan →](09-implementation-plan.md)
 
 ---
 
-# Base URL
+## Table of Contents
+
+- [Purpose](#purpose)
+- [Base URL & Authentication](#base-url--authentication)
+- [API Summary](#api-summary)
+- [Endpoints](#endpoints)
+- [Standard Error Response](#standard-error-response)
+- [HTTP Status Codes](#http-status-codes)
+- [Validation Rules](#validation-rules)
+- [Rate Limiting](#rate-limiting)
+- [Idempotency Strategy](#idempotency-strategy)
+- [Security Considerations](#security-considerations)
+- [Observability](#observability)
+
+---
+
+## Purpose
+
+This document defines the REST API for the Football Virtual Waiting Room — covering queue management, queue status, admission, token validation, and administrative operations. Every endpoint is stateless, idempotent where applicable, and designed for deployment behind Amazon API Gateway.
+
+Each endpoint maps directly to one or more optimized DynamoDB operations from [`03-access-patterns.md`](03-access-patterns.md) and [`06-index-design.md`](06-index-design.md).
+
+---
+
+## Base URL & Authentication
 
 ```
 https://api.example.com/v1
 ```
 
----
-
-# Authentication
-
-The API is designed to work with authenticated users.
-
-Possible authentication mechanisms:
-
-- JWT
-- Amazon Cognito
-- IAM Authorization
-- Lambda Authorizer
-
-For this challenge, authentication is assumed to occur before requests reach the application.
+| | |
+|---|---|
+| **Content-Type** | `application/json` |
+| **Authentication** | Assumed to occur before requests reach the application. Possible mechanisms: JWT, Amazon Cognito, IAM Authorization, or a Lambda Authorizer. |
 
 ---
 
-# Content Type
+## API Summary
 
-```
-application/json
-```
-
----
-
-# API Summary
-
-| Method | Endpoint | Purpose |
-|----------|----------|----------|
-| POST | /queue/join | Join waiting room |
-| GET | /queue/status | Retrieve queue status |
-| POST | /queue/leave | Leave queue |
-| POST | /queue/admit | Admit next users (Admin) |
-| POST | /token/validate | Validate admission token |
-| GET | /event/{eventId} | Event information |
-| GET | /event/{eventId}/stats | Queue statistics |
+| Method | Endpoint | Purpose | DynamoDB Op |
+|---|---|---|---|
+| `POST` | `/queue/join` | Join waiting room | Conditional `PutItem` |
+| `GET` | `/queue/status` | Retrieve queue status | `Query` (GSI1) |
+| `POST` | `/queue/leave` | Leave queue | `UpdateItem` |
+| `POST` | `/queue/admit` | Admit next users *(Admin)* | `Query` + `UpdateItem` |
+| `POST` | `/token/validate` | Validate admission token | `GetItem` / GSI2 |
+| `GET` | `/event/{eventId}` | Event information | `GetItem` |
+| `GET` | `/event/{eventId}/stats` | Queue statistics | `GetItem` (STATS item) |
 
 ---
 
-# POST /queue/join
+## Endpoints
 
-## Description
+### `POST /queue/join`
 
 Registers a user in the waiting room.
 
----
+<details>
+<summary><b>Request / Response / Errors</b></summary>
 
-## Request
-
+**Request**
 ```json
-{
-  "eventId": "1001",
-  "userId": "501"
-}
+{ "eventId": "1001", "userId": "501" }
 ```
 
----
-
-## Success Response
-
-HTTP 201
-
+**Success — `201 Created`**
 ```json
 {
   "message": "Successfully joined queue.",
@@ -99,51 +81,32 @@ HTTP 201
 }
 ```
 
----
-
-## Error Responses
+**Errors**
 
 | HTTP | Meaning |
-|------|----------|
+|---|---|
 | 400 | Invalid request |
 | 401 | Unauthorized |
 | 404 | Event not found |
 | 409 | Already registered |
 | 500 | Internal error |
 
----
+**Idempotency:** duplicate requests return the existing queue record rather than creating another one.
 
-## DynamoDB Operations
-
-- Conditional PutItem
-- Update queue statistics
+</details>
 
 ---
 
-## Idempotency
-
-Duplicate requests should return the existing queue record rather than creating another one.
-
----
-
-# GET /queue/status
-
-## Description
+### `GET /queue/status`
 
 Returns the current status of the authenticated user's queue entry.
 
----
+<details>
+<summary><b>Request / Response</b></summary>
 
-## Query Parameters
+**Query Parameters:** `eventId=1001`
 
-```
-eventId=1001
-```
-
----
-
-## Success Response
-
+**Success — `200 OK`**
 ```json
 {
   "eventId": "1001",
@@ -153,119 +116,73 @@ eventId=1001
 }
 ```
 
----
+**DynamoDB Operation:** `Query` (GSI1)
 
-## DynamoDB Operation
-
-Query (GSI1)
+</details>
 
 ---
 
-# POST /queue/leave
-
-## Description
+### `POST /queue/leave`
 
 Allows a user to voluntarily leave the queue.
 
----
+<details>
+<summary><b>Request / Response</b></summary>
 
-## Request
-
+**Request**
 ```json
-{
-  "eventId": "1001",
-  "userId": "501"
-}
+{ "eventId": "1001", "userId": "501" }
 ```
 
----
-
-## Success Response
-
+**Success — `200 OK`**
 ```json
-{
-  "message": "You have left the queue."
-}
+{ "message": "You have left the queue." }
 ```
+
+**DynamoDB Operation:** `UpdateItem` → status becomes `CANCELLED`
+
+</details>
 
 ---
 
-## DynamoDB Operation
+### `POST /queue/admit` — *Admin only*
 
-UpdateItem
+Admits the next batch of waiting users.
 
-Status becomes
+<details>
+<summary><b>Request / Response</b></summary>
 
-```
-CANCELLED
-```
-
----
-
-# POST /queue/admit
-
-## Description
-
-Administrative endpoint that admits the next batch of waiting users.
-
----
-
-## Request
-
+**Request**
 ```json
-{
-  "eventId": "1001",
-  "batchSize": 50
-}
+{ "eventId": "1001", "batchSize": 50 }
 ```
 
----
-
-## Success Response
-
+**Success — `200 OK`**
 ```json
-{
-  "admittedUsers": 50,
-  "remainingQueue": 18235
-}
+{ "admittedUsers": 50, "remainingQueue": 18235 }
 ```
 
----
+**DynamoDB Operations:** Query queue → update queue entries → generate admission tokens
 
-## DynamoDB Operations
+**Authorization:** Administrator only.
 
-- Query queue
-- Update queue entries
-- Generate admission tokens
+</details>
 
 ---
 
-## Authorization
-
-Administrator only.
-
----
-
-# POST /token/validate
-
-## Description
+### `POST /token/validate`
 
 Validates an admission token before allowing access to ticket purchasing.
 
----
+<details>
+<summary><b>Request / Response</b></summary>
 
-## Request
-
+**Request**
 ```json
-{
-  "token": "ABC123XYZ"
-}
+{ "token": "ABC123XYZ" }
 ```
 
----
-
-## Success Response
-
+**Success — `200 OK`**
 ```json
 {
   "valid": true,
@@ -275,36 +192,23 @@ Validates an admission token before allowing access to ticket purchasing.
 }
 ```
 
----
-
-## Invalid Response
-
-HTTP 401
-
+**Invalid — `401 Unauthorized`**
 ```json
-{
-  "valid": false,
-  "reason": "Token expired."
-}
+{ "valid": false, "reason": "Token expired." }
 ```
 
----
+**DynamoDB Operation:** `GetItem` or GSI2 lookup
 
-## DynamoDB Operation
-
-GetItem or GSI2 lookup
+</details>
 
 ---
 
-# GET /event/{eventId}
-
-## Description
+### `GET /event/{eventId}`
 
 Returns metadata for a football event.
 
----
-
-## Success Response
+<details>
+<summary><b>Response</b></summary>
 
 ```json
 {
@@ -316,23 +220,18 @@ Returns metadata for a football event.
 }
 ```
 
----
+**DynamoDB Operation:** `GetItem`
 
-## DynamoDB Operation
-
-GetItem
+</details>
 
 ---
 
-# GET /event/{eventId}/stats
-
-## Description
+### `GET /event/{eventId}/stats`
 
 Returns aggregate queue statistics.
 
----
-
-## Success Response
+<details>
+<summary><b>Response</b></summary>
 
 ```json
 {
@@ -343,15 +242,13 @@ Returns aggregate queue statistics.
 }
 ```
 
----
+**DynamoDB Operation:** `GetItem` (STATS item)
 
-## DynamoDB Operation
-
-GetItem (STATS item)
+</details>
 
 ---
 
-# Standard Error Response
+## Standard Error Response
 
 ```json
 {
@@ -364,10 +261,10 @@ GetItem (STATS item)
 
 ---
 
-# HTTP Status Codes
+## HTTP Status Codes
 
 | Code | Meaning |
-|------|---------|
+|---|---|
 | 200 | Success |
 | 201 | Created |
 | 204 | No Content |
@@ -381,117 +278,69 @@ GetItem (STATS item)
 
 ---
 
-# Validation Rules
+## Validation Rules
 
-## Join Queue
-
-- Event ID must exist.
-- User must be authenticated.
-- User must not already be in the queue.
-- Event must be open.
-
----
-
-## Validate Token
-
-- Token must exist.
-- Token must not be expired.
-- Token must belong to the requesting user.
+| Endpoint | Rules |
+|---|---|
+| **Join Queue** | Event ID must exist · user must be authenticated · user must not already be in the queue · event must be open |
+| **Validate Token** | Token must exist · token must not be expired · token must belong to the requesting user |
+| **Leave Queue** | Queue entry must exist · queue must still be active · user must own the queue entry |
 
 ---
 
-## Leave Queue
-
-- Queue entry must exist.
-- Queue must still be active.
-- User must own the queue entry.
-
----
-
-# Rate Limiting
+## Rate Limiting
 
 Recommended API Gateway throttling:
 
 | Endpoint | Limit |
-|----------|-------|
+|---|---|
 | Queue Status | 5 requests/second/user |
 | Join Queue | 2 requests/minute/user |
 | Token Validation | 10 requests/minute/user |
 | Event Lookup | 20 requests/minute/user |
 
-Rate limiting helps protect the platform during peak traffic.
+Rate limiting protects the platform during peak, ticket-drop-level traffic.
 
 ---
 
-# Idempotency Strategy
+## Idempotency Strategy
 
 To prevent duplicate registrations:
 
-- Use conditional writes in DynamoDB.
-- Support an optional `Idempotency-Key` request header.
-- If a request with the same idempotency key is retried, return the original response.
+- Use conditional writes in DynamoDB (`attribute_not_exists(PK)`)
+- Support an optional `Idempotency-Key` request header
+- Retried requests with the same idempotency key return the original response
 
-This is especially important for unreliable mobile networks and browser retries.
-
----
-
-# Sequence Example
-
-```
-User
- │
- │ POST /queue/join
- ▼
-API Gateway
- │
- ▼
-Join Queue Lambda
- │
- ▼
-Conditional PutItem
- │
- ▼
-Queue Created
- │
- ▼
-HTTP 201
-```
+Especially important for unreliable mobile networks and browser retries — see `POST /queue/join` above.
 
 ---
 
-# Security Considerations
+## Security Considerations
 
 - HTTPS only
-- Input validation
-- Authorization before business logic
+- Input validation on every request
+- Authorization before business logic executes
 - No sensitive information in responses
-- Token expiration enforcement
-- Least-privilege IAM roles
+- Token expiration strictly enforced
+- Least-privilege IAM roles per Lambda
 
 ---
 
-# Observability
+## Observability
 
-Each request should include:
+Every request logs:
 
 - Request ID
 - Correlation ID
 - Timestamp
-- User ID (where appropriate)
+- User ID (where applicable)
 
-These identifiers simplify debugging and distributed tracing.
+These identifiers simplify debugging and distributed tracing across API Gateway → Lambda → DynamoDB.
 
 ---
 
-# Summary
+## Summary
 
-The REST API is designed to be:
+The REST API is stateless, secure, idempotent, scalable, and easy to consume. Each endpoint maps cleanly to the DynamoDB access patterns and indexes established earlier in the design — ensuring low latency and predictable performance under heavy load.
 
-- Stateless
-- Secure
-- Idempotent
-- Scalable
-- Easy to consume
-- Efficiently mapped to DynamoDB access patterns
-
-Each endpoint corresponds directly to one or more optimized DynamoDB operations, ensuring low latency and predictable performance under heavy load.
+A ready-to-use request collection is available in [`../postman/`](../postman/). Next: [`09-implementation-plan.md`](09-implementation-plan.md) covers how this API and its backing infrastructure were actually built.

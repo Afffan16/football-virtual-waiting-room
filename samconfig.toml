@@ -4,6 +4,7 @@ version = 0.1
 
 [default.global.parameters]
 stack_name = "football-waiting-room"
+region = "us-east-1"
 
 [default.build.parameters]
 cached = true
@@ -16,6 +17,10 @@ lint = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
+stack_name = "football-waiting-room-prod"
+s3_prefix = "football-waiting-room-prod"
+parameter_overrides = "StageName=\"Prod\" TokenTTLMinutes=\"15\" SessionTTLMinutes=\"30\" DefaultBatchSize=\"50\""
+image_repositories = []
 
 [default.package.parameters]
 resolve_s3 = true

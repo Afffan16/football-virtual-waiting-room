@@ -6,7 +6,7 @@ Description: >
 
 Globals:
   Function:
-    Runtime: python3.12
+    Runtime: python3.14
     Timeout: 30
     MemorySize: 256
     Architectures:
@@ -140,17 +140,11 @@ Resources:
     Properties:
       StageName: !Ref StageName
       Description: Football Virtual Waiting Room REST API
-      TracingEnabled: true
       Cors:
         AllowMethods: "'GET,POST,OPTIONS'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Idempotency-Key'"
         AllowOrigin: "'*'"
-      MethodSettings:
-        - ResourcePath: "/*"
-          HttpMethod: "*"
-          LoggingLevel: INFO
-          DataTraceEnabled: true
-          MetricsEnabled: true
+
 
   # ==========================================================================
   # Lambda Functions

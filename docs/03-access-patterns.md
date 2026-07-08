@@ -1,562 +1,251 @@
-# Access Pattern Analysis
+# 🎯 Access Pattern Analysis
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/03-access-patterns.md`
 
-Version: 1.0
+← [Back: Requirements Analysis](02-requirements-analysis.md) · Next: [Data Model →](04-data-model.md)
 
 ---
 
-# Purpose
+## Table of Contents
+
+- [Purpose](#purpose)
+- [Design Goals](#design-goals)
+- [Core Access Patterns](#core-access-patterns)
+- [Access Pattern Details (AP-01 → AP-10)](#access-pattern-details)
+- [Read vs. Write Analysis](#read-vs-write-analysis)
+- [Expected Request Distribution](#expected-request-distribution)
+- [Access Pattern Matrix](#access-pattern-matrix)
+- [Access Pattern Priority](#access-pattern-priority)
+- [Scalability Considerations](#scalability-considerations)
+- [Design Decisions Derived from This Analysis](#design-decisions-derived-from-this-analysis)
+
+---
+
+## Purpose
 
 Amazon DynamoDB is designed around **access patterns**, not entity relationships.
 
-Unlike relational databases, where tables are created first and queries are written later, DynamoDB requires us to identify every application query before designing the table schema.
+Unlike relational databases — where tables are created first and queries are written later — DynamoDB requires every application query to be identified *before* the table schema is designed. This document defines every operation the Football Virtual Waiting Room must support, and maps each one to an efficient DynamoDB access strategy.
 
-This document defines every operation the Football Virtual Waiting Room must support and maps each operation to an efficient DynamoDB access strategy.
-
----
-
-# Design Goals
-
-Every access pattern should satisfy the following objectives:
-
-- Query-based retrieval only
-- No table scans
-- Single-digit millisecond latency
-- Horizontal scalability
-- Minimal read and write costs
-- Efficient partition utilization
+> This is the pivot point of the whole design process: [`02-requirements-analysis.md`](02-requirements-analysis.md) established *what* the system needs to do; this document nails down exactly *how* each of those needs gets queried, which then directly drives the key schema in [`05-table-schema.md`](05-table-schema.md) and the indexes in [`06-index-design.md`](06-index-design.md).
 
 ---
 
-# Core Access Patterns
+## Design Goals
 
-The application supports the following major operations.
+Every access pattern in this document is held to the same bar:
+
+- ✅ Query-based retrieval only
+- ✅ No table scans
+- ✅ Single-digit millisecond latency
+- ✅ Horizontal scalability
+- ✅ Minimal read and write costs
+- ✅ Efficient partition utilization
+
+---
+
+## Core Access Patterns
 
 | ID | Operation | Priority |
-|----|-----------|----------|
-| AP-01 | Join Queue | High |
-| AP-02 | Check Queue Status | High |
-| AP-03 | Get Event Information | High |
-| AP-04 | Admit Next Users | High |
-| AP-05 | Generate Admission Token | High |
-| AP-06 | Validate Token | High |
-| AP-07 | Remove Expired Session | Medium |
-| AP-08 | Update Queue Status | Medium |
-| AP-09 | List Users for Event (Admin) | Low |
-| AP-10 | View Queue Statistics | Low |
+|---|---|---|
+| AP-01 | Join Queue | 🔴 High |
+| AP-02 | Check Queue Status | 🔴 High |
+| AP-03 | Get Event Information | 🔴 High |
+| AP-04 | Admit Next Users | 🔴 High |
+| AP-05 | Generate Admission Token | 🔴 High |
+| AP-06 | Validate Token | 🔴 High |
+| AP-07 | Remove Expired Session | 🟡 Medium |
+| AP-08 | Update Queue Status | 🟡 Medium |
+| AP-09 | List Users for Event (Admin) | 🟢 Low |
+| AP-10 | View Queue Statistics | 🟢 Low |
 
 ---
 
-# AP-01 — Join Queue
+## Access Pattern Details
 
-## Description
+### AP-01 — Join Queue
 
 A user joins the waiting room for a football event.
 
----
+| | |
+|---|---|
+| **Input** | User ID, Event ID, Join Timestamp |
+| **Output** | Queue Position, Queue Status |
+| **DynamoDB Operation** | `PutItem` |
+| **Conditional Expression** | `attribute_not_exists(PK)` |
+| **Requirements** | Prevent duplicate registrations · assign queue metadata · complete in milliseconds |
+| **Expected Cost** | 1 Write Capacity Unit |
 
-## Input
+### AP-02 — Check Queue Status
 
-- User ID
-- Event ID
-- Join Timestamp
+Retrieve a user's current waiting status.
 
----
+| | |
+|---|---|
+| **Input** | User ID, Event ID |
+| **Output** | Position, Status, Estimated Wait, Event |
+| **DynamoDB Operation** | `Query` |
+| **Requirements** | No scans · returns exactly one queue record |
+| **Frequency** | 🔥 Very High — users may poll every few seconds |
 
-## Output
-
-- Queue Position
-- Queue Status
-
----
-
-## DynamoDB Operation
-
-PutItem
-
----
-
-## Requirements
-
-- Prevent duplicate registrations.
-- Assign queue metadata.
-- Write should complete in milliseconds.
-
----
-
-## Conditional Expression
-
-```
-
-attribute_not_exists(PK)
-
-```
-
----
-
-## Expected Cost
-
-1 Write Capacity Unit
-
----
-
-# AP-02 — Check Queue Status
-
-## Description
-
-Retrieve the current waiting status of a user.
-
----
-
-## Input
-
-User ID
-
-Event ID
-
----
-
-## Output
-
-- Position
-- Status
-- Estimated Wait
-- Event
-
----
-
-## DynamoDB Operation
-
-Query
-
----
-
-## Requirements
-
-No scans.
-
-Should return exactly one queue record.
-
----
-
-## Frequency
-
-Very High
-
-Users may poll every few seconds.
-
----
-
-# AP-03 — Retrieve Event Details
-
-## Description
+### AP-03 — Retrieve Event Details
 
 Retrieve football match information.
 
----
+| | |
+|---|---|
+| **Input** | Event ID |
+| **Output** | Match, Stadium, Capacity, Queue Status |
+| **DynamoDB Operation** | `GetItem` |
+| **Frequency** | Medium |
 
-## Input
-
-Event ID
-
----
-
-## Output
-
-- Match
-- Stadium
-- Capacity
-- Queue Status
-
----
-
-## DynamoDB Operation
-
-GetItem
-
----
-
-## Frequency
-
-Medium
-
----
-
-# AP-04 — Admit Next Users
-
-## Description
+### AP-04 — Admit Next Users
 
 Select the next group of users eligible for admission.
 
----
+| | |
+|---|---|
+| **Input** | Event ID, Batch Size |
+| **Output** | Users to admit |
+| **DynamoDB Operation** | `Query`, ordered by queue metadata |
+| **Requirements** | Maintain fairness · avoid scans · support configurable batch sizes |
+| **Expected Cost** | Small query returning only the required items |
 
-## Input
-
-Event ID
-
-Batch Size
-
----
-
-## Output
-
-Users to admit
-
----
-
-## DynamoDB Operation
-
-Query
-
-Ordered by queue metadata.
-
----
-
-## Requirements
-
-- Maintain fairness.
-- Avoid scans.
-- Support configurable admission batch sizes.
-
----
-
-## Expected Cost
-
-Small query returning only required items.
-
----
-
-# AP-05 — Generate Admission Token
-
-## Description
+### AP-05 — Generate Admission Token
 
 Create an access token after admission.
 
----
+| | |
+|---|---|
+| **Input** | User ID, Event ID, Expiration |
+| **Output** | Token |
+| **DynamoDB Operation** | `PutItem` |
+| **Requirements** | TTL enabled · token uniqueness enforced |
 
-## Input
+### AP-06 — Validate Token
 
-User ID
+Validate a user's admission token before checkout.
 
-Event ID
+| | |
+|---|---|
+| **Input** | Token |
+| **Output** | `Valid` / `Expired` / `Invalid` |
+| **DynamoDB Operation** | `GetItem`, or `Query` via GSI |
+| **Requirements** | Very low latency |
 
-Expiration
-
----
-
-## Output
-
-Token
-
----
-
-## DynamoDB Operation
-
-PutItem
-
----
-
-## Requirements
-
-TTL enabled.
-
-Unique token.
-
----
-
-# AP-06 — Validate Token
-
-## Description
-
-Validate user admission token before checkout.
-
----
-
-## Input
-
-Token
-
----
-
-## Output
-
-Valid
-
-Expired
-
-Invalid
-
----
-
-## DynamoDB Operation
-
-GetItem
-
-or
-
-Query via GSI
-
----
-
-## Requirements
-
-Very low latency.
-
----
-
-# AP-07 — Remove Expired Session
-
-## Description
+### AP-07 — Remove Expired Session
 
 Automatically remove inactive sessions.
 
----
+| | |
+|---|---|
+| **Input** | TTL Expiration |
+| **DynamoDB Operation** | Automatic TTL deletion |
+| **Manual Reads** | None |
 
-## Input
+### AP-08 — Update Queue Status
 
-TTL Expiration
+Update a user's queue status: `WAITING` · `ADMITTED` · `EXPIRED` · `COMPLETED` · `CANCELLED`.
 
----
+| | |
+|---|---|
+| **DynamoDB Operation** | `UpdateItem` |
+| **Requirements** | Atomic update |
 
-## DynamoDB Operation
-
-Automatic TTL deletion
-
----
-
-## Manual Reads
-
-None
-
----
-
-# AP-08 — Update Queue Status
-
-## Description
-
-Update a user's queue status.
-
-Possible values
-
-- Waiting
-- Admitted
-- Expired
-- Completed
-- Cancelled
-
----
-
-## DynamoDB Operation
-
-UpdateItem
-
----
-
-## Requirements
-
-Atomic update.
-
----
-
-# AP-09 — Administrator View
-
-## Description
+### AP-09 — Administrator View
 
 List users participating in an event.
 
----
+| | |
+|---|---|
+| **Input** | Event ID |
+| **Output** | User List |
+| **DynamoDB Operation** | `Query` |
+| **Usage** | Low frequency — administrative dashboard only |
 
-## Input
+### AP-10 — Queue Statistics
 
-Event ID
+Retrieve queue metrics: current queue size, users admitted, users waiting, expired sessions, completion rate.
 
----
-
-## Output
-
-User List
-
----
-
-## DynamoDB Operation
-
-Query
+| | |
+|---|---|
+| **DynamoDB Operation** | Aggregated counters / derived metrics — never a scan |
 
 ---
 
-## Usage
-
-Low frequency.
-
-Administrative dashboard only.
-
----
-
-# AP-10 — Queue Statistics
-
-## Description
-
-Retrieve queue metrics.
-
----
-
-## Example Metrics
-
-Current Queue Size
-
-Users Admitted
-
-Users Waiting
-
-Expired Sessions
-
-Completion Rate
-
----
-
-## DynamoDB Operation
-
-Aggregated counters or derived metrics
-
-Avoid expensive scans.
-
----
-
-# Read vs Write Analysis
+## Read vs. Write Analysis
 
 | Operation | Read | Write |
-|-----------|------|-------|
-| Join Queue |  | ✓ |
+|---|:---:|:---:|
+| Join Queue | | ✓ |
 | Queue Status | ✓ | |
 | Event Lookup | ✓ | |
 | Admit Users | ✓ | ✓ |
 | Token Generation | | ✓ |
 | Token Validation | ✓ | |
-| Session Expiration | | Automatic |
+| Session Expiration | | Automatic (TTL) |
 | Status Update | | ✓ |
 
 ---
 
-# Expected Request Distribution
+## Expected Request Distribution
 
-| Operation | Percentage |
-|-----------|------------|
-| Queue Status | 65% |
-| Join Queue | 15% |
-| Admit Users | 8% |
-| Token Validation | 7% |
-| Event Lookup | 3% |
-| Admin Operations | 2% |
+```mermaid
+pie showData
+    title Expected Request Distribution
+    "Queue Status" : 65
+    "Join Queue" : 15
+    "Admit Users" : 8
+    "Token Validation" : 7
+    "Event Lookup" : 3
+    "Admin Operations" : 2
+```
 
-Observation:
-
-The workload is heavily read-oriented because users continuously check their queue status.
+**Observation:** the workload is heavily read-oriented, because users continuously poll their queue status. This single fact is the main justification for GSI1 (user → queue lookup) in [`06-index-design.md`](06-index-design.md) — status checks have to be cheap, since they dominate traffic.
 
 ---
 
-# Access Pattern Matrix
+## Access Pattern Matrix
 
 | Access Pattern | DynamoDB Operation | Expected Result |
-|----------------|-------------------|-----------------|
-| Join Queue | PutItem | Queue created |
-| Check Queue | Query | Single queue record |
-| Event Lookup | GetItem | Event metadata |
-| Admit Users | Query | Ordered batch |
-| Issue Token | PutItem | Token created |
-| Validate Token | GetItem | Token status |
-| Update Status | UpdateItem | Status changed |
+|---|---|---|
+| Join Queue | `PutItem` | Queue created |
+| Check Queue | `Query` | Single queue record |
+| Event Lookup | `GetItem` | Event metadata |
+| Admit Users | `Query` | Ordered batch |
+| Issue Token | `PutItem` | Token created |
+| Validate Token | `GetItem` | Token status |
+| Update Status | `UpdateItem` | Status changed |
 | Remove Session | TTL | Record deleted |
-| Admin Event View | Query | Event users |
-| Queue Metrics | Query / Counters | Statistics |
+| Admin Event View | `Query` | Event users |
+| Queue Metrics | `Query` / Counters | Statistics |
 
 ---
 
-# Access Pattern Priority
+## Access Pattern Priority
 
-## Critical
-
-- Join Queue
-- Check Queue
-- Admit Users
-- Validate Token
-
-These operations directly affect end-user experience and must remain highly optimized.
+| Tier | Patterns | Why |
+|---|---|---|
+| 🔴 **Critical** | Join Queue · Check Queue · Admit Users · Validate Token | Directly affect end-user experience; must remain highly optimized |
+| 🟡 **Important** | Update Queue Status · Token Generation · Event Lookup | Support the critical path but aren't user-facing latency bottlenecks |
+| 🟢 **Administrative** | Statistics · Event Dashboard · Queue Reports | Must never impact customer-facing traffic |
 
 ---
 
-## Important
+## Scalability Considerations
 
-- Update Queue Status
-- Token Generation
-- Event Lookup
-
----
-
-## Administrative
-
-- Statistics
-- Event Dashboard
-- Queue Reports
-
-These operations must never impact customer-facing traffic.
+| Challenge | Mitigation |
+|---|---|
+| **Hot partitions** — millions of users may join the same event simultaneously | Event-based partitioning · write sharding if necessary · adaptive capacity |
+| **Polling traffic** — users repeatedly check queue status | Query by User ID · lightweight projections · efficient indexing |
+| **Admission processing** — users must be admitted in order | Sort key ordering · `Query` with `Limit` · batch updates |
+| **Token validation** — must remain extremely fast | Direct key lookup · dedicated GSI if required |
 
 ---
 
-# Scalability Considerations
+## Design Decisions Derived from This Analysis
 
-The following challenges must be addressed during schema design.
-
-## Hot Partitions
-
-Millions of users may join the same event simultaneously.
-
-Mitigation:
-
-- Event-based partitioning
-- Write sharding (if necessary)
-- Adaptive Capacity
-
----
-
-## Polling Traffic
-
-Users repeatedly check their queue status.
-
-Mitigation:
-
-- Query by User ID
-- Lightweight projections
-- Efficient indexing
-
----
-
-## Admission Processing
-
-Users should be admitted in order.
-
-Mitigation:
-
-- Sort Key ordering
-- Query with Limit
-- Batch updates
-
----
-
-## Token Validation
-
-Token validation must remain extremely fast.
-
-Mitigation:
-
-- Direct key lookup
-- Dedicated GSI if required
-
----
-
-# Design Decisions Derived from Access Patterns
-
-From this analysis we conclude that the final DynamoDB model must support:
+From this analysis, the final DynamoDB model must support:
 
 - Fast user lookup
 - Fast event lookup
@@ -567,4 +256,4 @@ From this analysis we conclude that the final DynamoDB model must support:
 - Conditional writes
 - Efficient indexing
 
-These requirements will directly influence the Primary Key, Sort Key, and Global Secondary Index design in the next document.
+These requirements directly shape the Partition Key, Sort Key, and GSI design in the next two documents: [`04-data-model.md`](04-data-model.md) and [`05-table-schema.md`](05-table-schema.md).

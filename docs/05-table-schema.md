@@ -1,314 +1,207 @@
-# DynamoDB Physical Table Schema
+# 🗄️ DynamoDB Physical Table Schema
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/05-table-schema.md`
 
-Version: 1.0
-
----
-
-# Purpose
-
-This document defines the physical DynamoDB table used by the Football Virtual Waiting Room.
-
-The solution follows a **Single Table Design**, storing all application entities in one table while differentiating them using structured partition keys, sort keys, and item attributes.
-
-The schema is optimized for the access patterns identified earlier and leaves room for future horizontal scaling techniques such as write sharding.
+← [Back: Data Model](04-data-model.md) · Next: [Index Design →](06-index-design.md)
 
 ---
 
-# Table Information
+## Table of Contents
+
+- [Purpose](#purpose)
+- [Table Information](#table-information)
+- [Primary Key](#primary-key)
+- [Key Naming Convention](#key-naming-convention)
+- [Entity Layout](#entity-layout)
+- [Shared Attributes](#shared-attributes)
+- [Status Value Reference](#status-value-reference)
+- [TTL Configuration](#ttl-configuration)
+- [Example Items](#example-items)
+- [Item Collection](#item-collection)
+- [Design Considerations](#design-considerations)
+- [Future Scalability](#future-scalability)
+
+---
+
+## Purpose
+
+This document defines the **physical** DynamoDB table used by the Football Virtual Waiting Room — the concrete implementation of the logical model from [`04-data-model.md`](04-data-model.md).
+
+The solution follows a **Single Table Design**, storing all application entities in one table while differentiating them using structured partition keys, sort keys, and item attributes. The schema is optimized for the access patterns identified in [`03-access-patterns.md`](03-access-patterns.md) and leaves room for future horizontal scaling techniques such as write sharding.
+
+---
+
+## Table Information
 
 | Property | Value |
-|----------|-------|
-| Table Name | FootballWaitingRoom |
-| Billing Mode | On-Demand |
-| Primary Key | PK + SK |
-| Streams | Enabled (NEW_AND_OLD_IMAGES) |
+|---|---|
+| Table Name | `FootballWaitingRoom` |
+| Billing Mode | On-Demand (`PAY_PER_REQUEST`) |
+| Primary Key | `PK` + `SK` |
+| Streams | Enabled (`NEW_AND_OLD_IMAGES`) |
 | TTL | Enabled |
 | Point-in-Time Recovery | Enabled |
 | Server-Side Encryption | Enabled |
 
 ---
 
-# Primary Key
+## Primary Key
 
-The table uses a composite primary key.
+A composite primary key:
 
-Partition Key
-
-```
-PK
-```
-
-Sort Key
-
-```
-SK
-```
+| | |
+|---|---|
+| **Partition Key** | `PK` |
+| **Sort Key** | `SK` |
 
 ---
 
-# Key Naming Convention
+## Key Naming Convention
 
-To support multiple entity types inside one table, every key follows a predictable prefix strategy.
-
-Examples
+Every key follows a predictable prefix strategy, so multiple entity types can share one table without collisions:
 
 ```
 EVENT#1001
-
 USER#501
-
 QUEUE#501
-
 TOKEN#ABC123
-
 SESSION#XYZ
-
 STATS
 ```
 
 ---
 
-# Entity Layout
+## Entity Layout
 
-## Event Item
+### Event Item
 
-PK
-
-```
-EVENT#1001
-```
-
-SK
-
-```
-METADATA
-```
-
-Example Attributes
+| | |
+|---|---|
+| **PK** | `EVENT#1001` |
+| **SK** | `METADATA` |
 
 | Attribute | Description |
-|-----------|-------------|
-| eventId | Unique event identifier |
-| matchName | Name of football match |
-| stadium | Stadium |
-| capacity | Maximum tickets |
-| startTime | Match start |
-| status | Event status |
+|---|---|
+| `eventId` | Unique event identifier |
+| `matchName` | Name of football match |
+| `stadium` | Stadium |
+| `capacity` | Maximum tickets |
+| `startTime` | Match start |
+| `status` | Event status |
+
+### Queue Entry
+
+| | |
+|---|---|
+| **PK** | `EVENT#1001` |
+| **SK** | `QUEUE#00000123` |
+
+| Attribute | Description |
+|---|---|
+| `userId` | User |
+| `queuePosition` | Immutable queue position |
+| `joinTime` | Registration time |
+| `status` | `WAITING` / `ADMITTED` / `COMPLETED` |
+| `estimatedWait` | Estimated wait |
+| `shardId` | Optional future optimization |
+
+### User Item
+
+| | |
+|---|---|
+| **PK** | `USER#501` |
+| **SK** | `PROFILE` |
+
+| Attribute | Description |
+|---|---|
+| `userId` | User identifier |
+| `name` | Full name |
+| `email` | Email |
+| `createdAt` | Registration timestamp |
+
+### Session Item
+
+| | |
+|---|---|
+| **PK** | `USER#501` |
+| **SK** | `SESSION#ACTIVE` |
+
+| Attribute | Description |
+|---|---|
+| `sessionId` | Session identifier |
+| `lastActivity` | Last heartbeat |
+| `device` | Device information |
+| `ttl` | Expiration timestamp |
+
+### Admission Token
+
+| | |
+|---|---|
+| **PK** | `TOKEN#ABC123` |
+| **SK** | `METADATA` |
+
+| Attribute | Description |
+|---|---|
+| `tokenId` | Token |
+| `userId` | Owner |
+| `eventId` | Associated event |
+| `expiresAt` | TTL |
+| `status` | `ACTIVE` / `USED` / `EXPIRED` |
+
+### Statistics Item
+
+| | |
+|---|---|
+| **PK** | `EVENT#1001` |
+| **SK** | `STATS` |
+
+| Attribute | Description |
+|---|---|
+| `waitingUsers` | Current queue size |
+| `admittedUsers` | Users admitted |
+| `expiredUsers` | Expired sessions |
+| `avgWaitTime` | Average wait |
 
 ---
 
-## Queue Entry
+## Shared Attributes
 
-PK
-
-```
-EVENT#1001
-```
-
-SK
-
-```
-QUEUE#00000123
-```
-
-Example Attributes
-
-| Attribute | Description |
-|-----------|-------------|
-| userId | User |
-| queuePosition | Immutable queue position |
-| joinTime | Registration time |
-| status | WAITING / ADMITTED / COMPLETED |
-| estimatedWait | Estimated wait |
-| shardId | Optional future optimization |
-
----
-
-## User Item
-
-PK
-
-```
-USER#501
-```
-
-SK
-
-```
-PROFILE
-```
-
-Attributes
-
-| Attribute | Description |
-|-----------|-------------|
-| userId | User identifier |
-| name | Full name |
-| email | Email |
-| createdAt | Registration timestamp |
-
----
-
-## Session Item
-
-PK
-
-```
-USER#501
-```
-
-SK
-
-```
-SESSION#ACTIVE
-```
-
-Attributes
-
-| Attribute | Description |
-|-----------|-------------|
-| sessionId | Session identifier |
-| lastActivity | Last heartbeat |
-| device | Device information |
-| ttl | Expiration timestamp |
-
----
-
-## Admission Token
-
-PK
-
-```
-TOKEN#ABC123
-```
-
-SK
-
-```
-METADATA
-```
-
-Attributes
-
-| Attribute | Description |
-|-----------|-------------|
-| tokenId | Token |
-| userId | Owner |
-| eventId | Associated event |
-| expiresAt | TTL |
-| status | ACTIVE / USED / EXPIRED |
-
----
-
-## Statistics Item
-
-PK
-
-```
-EVENT#1001
-```
-
-SK
-
-```
-STATS
-```
-
-Attributes
-
-| Attribute | Description |
-|-----------|-------------|
-| waitingUsers | Current queue size |
-| admittedUsers | Users admitted |
-| expiredUsers | Expired sessions |
-| avgWaitTime | Average wait |
-
----
-
-# Shared Attributes
-
-Some attributes appear on multiple item types.
+Some attributes appear across multiple item types:
 
 | Attribute | Purpose |
-|-----------|---------|
-| createdAt | Creation timestamp |
-| updatedAt | Last modification |
-| status | Current state |
-| ttl | Expiration |
-| entityType | Logical item type |
+|---|---|
+| `createdAt` | Creation timestamp |
+| `updatedAt` | Last modification |
+| `status` | Current state |
+| `ttl` | Expiration |
+| `entityType` | Logical item type |
 
 ---
 
-# Queue Status Values
+## Status Value Reference
 
-```
-WAITING
-
-ADMITTED
-
-COMPLETED
-
-EXPIRED
-
-CANCELLED
-```
+| Domain | Values |
+|---|---|
+| **Queue Status** | `WAITING` · `ADMITTED` · `COMPLETED` · `EXPIRED` · `CANCELLED` |
+| **Token Status** | `ACTIVE` · `USED` · `EXPIRED` |
+| **Event Status** | `UPCOMING` · `OPEN` · `CLOSED` · `FINISHED` |
 
 ---
 
-# Token Status Values
+## TTL Configuration
 
-```
-ACTIVE
-
-USED
-
-EXPIRED
-```
+| | |
+|---|---|
+| **TTL Attribute** | `ttl` |
+| **Applied To** | Session Items, Admission Tokens |
+| **Benefits** | Automatic cleanup · lower storage costs · no scheduled cleanup jobs |
 
 ---
 
-# Event Status Values
-
-```
-UPCOMING
-
-OPEN
-
-CLOSED
-
-FINISHED
-```
-
----
-
-# TTL Configuration
-
-TTL Attribute
-
-```
-ttl
-```
-
-Applied To
-
-- Session Items
-- Admission Tokens
-
-Benefits
-
-- Automatic cleanup
-- Lower storage costs
-- No scheduled cleanup jobs
-
----
-
-# Example Items
-
-## Event
+## Example Items
 
 ```json
+// Event
 {
   "PK": "EVENT#1001",
   "SK": "METADATA",
@@ -319,11 +212,8 @@ Benefits
 }
 ```
 
----
-
-## Queue Entry
-
 ```json
+// Queue Entry
 {
   "PK": "EVENT#1001",
   "SK": "QUEUE#00000123",
@@ -335,11 +225,8 @@ Benefits
 }
 ```
 
----
-
-## Token
-
 ```json
+// Admission Token (TTL-managed)
 {
   "PK": "TOKEN#ABC123",
   "SK": "METADATA",
@@ -353,9 +240,9 @@ Benefits
 
 ---
 
-# Item Collection
+## Item Collection
 
-Example item collection for Event 1001
+A single `Query` on `PK = EVENT#1001` returns the entire item collection for that event in one request:
 
 ```
 EVENT#1001
@@ -371,67 +258,51 @@ EVENT#1001
 
 ---
 
-# Design Considerations
+## Design Considerations
 
-## Why Single Table?
+### Why Single Table?
 
 - Fewer network requests
 - Better performance
 - Lower operational complexity
 - Native DynamoDB best practice
 
----
-
-## Why Composite Keys?
-
-Composite keys enable:
+### Why Composite Keys?
 
 - Ordered queue retrieval
 - Efficient event grouping
-- Multiple entity types
+- Multiple entity types in one table
 - Range queries
 
----
+### Why Immutable Queue Positions?
 
-## Why Immutable Queue Positions?
-
-Instead of moving every user forward when someone leaves:
-
-- Queue positions remain fixed.
-- Only status changes.
-
-This significantly reduces write operations.
+Instead of moving every user forward when someone leaves the queue, positions stay fixed and only `status` changes — significantly reducing write operations. Full reasoning in [`04-data-model.md#queue-position-strategy`](04-data-model.md#queue-position-strategy).
 
 ---
 
 ## Future Scalability
 
-If write throughput becomes extremely high:
+If write throughput becomes extremely high, queue entries can transition from:
 
-Queue entries can transition from
-
-```
-PK = EVENT#1001
-```
-
-to
-
-```
-PK = EVENT#1001#SHARD#07
+```diff
+- PK = EVENT#1001
++ PK = EVENT#1001#SHARD#07
 ```
 
-without changing the external API contract.
+**without changing the external API contract.** This is the write-sharding strategy introduced in [`04-data-model.md#sharding-strategy`](04-data-model.md#sharding-strategy) — the schema is deliberately structured so this migration is additive, not a breaking change.
 
 ---
 
-# Summary
+## Summary
 
-This schema provides:
+| Property | Delivered |
+|---|---|
+| Single-table architecture | ✅ |
+| Query-first design | ✅ |
+| Efficient grouping | ✅ |
+| Ordered queue traversal | ✅ |
+| Automatic cleanup | ✅ |
+| Minimal storage duplication | ✅ |
+| Future-ready scalability | ✅ |
 
-- Single-table architecture
-- Query-first design
-- Efficient grouping
-- Ordered queue traversal
-- Automatic cleanup
-- Minimal storage duplication
-- Future-ready scalability
+Next: [`06-index-design.md`](06-index-design.md) defines the Global Secondary Indexes (GSI1–GSI3) that support the access patterns this schema alone can't serve directly.

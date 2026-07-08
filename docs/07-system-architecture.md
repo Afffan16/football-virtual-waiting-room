@@ -1,81 +1,77 @@
-# System Architecture
+# 🏛️ System Architecture
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/07-system-architecture.md`
 
-Version: 1.0
-
----
-
-# Purpose
-
-This document describes the overall architecture of the Football Virtual Waiting Room.
-
-The solution follows a **serverless, event-driven architecture** built on AWS managed services. The design prioritizes scalability, high availability, operational simplicity, and cost efficiency while showcasing Amazon DynamoDB as the core data store.
+← [Back: Index Design](06-index-design.md) · Next: [API Design →](08-api-design.md)
 
 ---
 
-# High-Level Architecture
+## Table of Contents
 
-```
-                        +----------------------+
-                        |      Web / Mobile    |
-                        |       Client App     |
-                        +----------+-----------+
-                                   |
-                                   |
-                          HTTPS REST API
-                                   |
-                                   ▼
-                      +-----------------------+
-                      |     Amazon API Gateway|
-                      +-----------+-----------+
-                                  |
-                +-----------------+-----------------+
-                |                 |                 |
-                ▼                 ▼                 ▼
-        Join Queue         Check Status      Validate Token
-          Lambda              Lambda             Lambda
-                |                 |                 |
-                +--------+--------+-----------------+
-                         |
-                         ▼
-                 +------------------+
-                 | Amazon DynamoDB  |
-                 | FootballWaiting  |
-                 | Room Table       |
-                 +--------+---------+
-                          |
-          +---------------+----------------+
-          |                                |
-          ▼                                ▼
- DynamoDB Streams                 CloudWatch Logs
-          |                                |
-          ▼                                ▼
- Event Processing                  Monitoring & Alerts
-          |
-          ▼
- EventBridge (Optional)
+- [Purpose](#purpose)
+- [High-Level Architecture](#high-level-architecture)
+- [AWS Services](#aws-services)
+- [Architecture Principles](#architecture-principles)
+- [Component Details](#component-details)
+- [Request Flows](#request-flows)
+- [Queue Lifecycle](#queue-lifecycle)
+- [Scalability](#scalability)
+- [High Availability](#high-availability)
+- [Security](#security)
+- [Monitoring](#monitoring)
+- [Failure Handling](#failure-handling)
+- [Cost Optimization](#cost-optimization)
+- [Future Enhancements](#future-enhancements)
+
+---
+
+## Purpose
+
+This document describes the overall architecture of the Football Virtual Waiting Room: a **serverless, event-driven architecture** built entirely on AWS managed services, prioritizing scalability, high availability, operational simplicity, and cost efficiency — with Amazon DynamoDB as the core data store.
+
+---
+
+## High-Level Architecture
+
+```mermaid
+flowchart TD
+    Client["🌐 Web / Mobile Client App"] -->|HTTPS REST API| APIGW["Amazon API Gateway"]
+
+    APIGW --> JQ["Join Queue λ"]
+    APIGW --> CS["Check Status λ"]
+    APIGW --> VT["Validate Token λ"]
+    APIGW --> LQ["Leave Queue λ"]
+    APIGW --> AU["Admit Users λ"]
+    APIGW --> EL["Event Lookup λ"]
+    APIGW --> ST["Statistics λ"]
+
+    JQ & CS & VT & LQ & AU & EL & ST --> DDB[("Amazon DynamoDB<br/>FootballWaitingRoom Table")]
+
+    DDB --> Streams["DynamoDB Streams"]
+    Streams --> EB["Amazon EventBridge<br/>(optional)"]
+    EB --> Proc["Event Processing<br/>(future consumers)"]
+
+    JQ & CS & VT & LQ & AU & EL & ST --> CW["Amazon CloudWatch<br/>Logs & Metrics"]
+    CW --> Alarms["Monitoring & Alerts"]
 ```
 
 ---
 
-# AWS Services
+## AWS Services
 
 | Service | Purpose |
-|----------|---------|
+|---|---|
 | Amazon API Gateway | Public REST API |
 | AWS Lambda | Business logic |
 | Amazon DynamoDB | Persistent storage |
-| DynamoDB Streams | Event notifications |
+| DynamoDB Streams | Change data capture / event notifications |
 | Amazon CloudWatch | Logs and metrics |
-| Amazon EventBridge | Event routing (optional) |
+| Amazon EventBridge | Event routing *(optional)* |
 | AWS IAM | Authentication and authorization |
 
 ---
 
-# Architecture Principles
-
-The solution is based on the following principles.
+## Architecture Principles
 
 - Serverless
 - Event-driven
@@ -86,340 +82,163 @@ The solution is based on the following principles.
 
 ---
 
-# Component Details
+## Component Details
 
-## 1. Client Application
+### 1. Client Application
 
-Users interact with the waiting room through a web or mobile application.
+Users interact with the waiting room through a web or mobile app, which talks **exclusively** to the REST API. Typical operations: join queue, check queue status, refresh position, enter the ticket-purchasing flow.
 
-Typical operations include:
+### 2. Amazon API Gateway
 
-- Join queue
-- Check queue status
-- Refresh position
-- Enter ticket purchasing flow
+The single entry point. Responsible for HTTPS termination, request routing, authentication, rate limiting, request validation, and CORS.
 
-The client communicates exclusively with the REST API.
+| Endpoint | Purpose |
+|---|---|
+| `POST /queue/join` | Join the queue |
+| `GET /queue/status` | Check status |
+| `POST /token/validate` | Validate a token |
+| `POST /queue/leave` | Leave the queue |
 
----
+*(Full endpoint list and contracts: [`08-api-design.md`](08-api-design.md).)*
 
-## 2. Amazon API Gateway
+### 3. AWS Lambda
 
-API Gateway serves as the single entry point.
+Each function has exactly one responsibility:
 
-Responsibilities:
+| Function | Responsibilities |
+|---|---|
+| **Join Queue** | Validate request · prevent duplicate registration · assign queue position · store queue record |
+| **Queue Status** | Retrieve queue information · calculate estimated wait · return current status |
+| **Token Validation** | Verify token exists · check expiration · return authorization decision |
+| **Queue Admission** | Select next users · update queue status · generate admission tokens (invocable on a schedule, manually, or by a future event trigger) |
 
-- HTTPS termination
-- Request routing
-- Authentication
-- Rate limiting
-- Request validation
-- CORS configuration
+### 4. Amazon DynamoDB
 
-Endpoints include:
+The primary data store: all entities, queue state, admission tokens, event metadata, and statistics.
 
-- POST /queue/join
-- GET /queue/status
-- POST /token/validate
-- POST /queue/leave
+**Features enabled:** Single Table Design · On-Demand Capacity · TTL · Streams · Point-in-Time Recovery · Server-Side Encryption. Full schema: [`05-table-schema.md`](05-table-schema.md).
 
----
+### 5. DynamoDB Streams
 
-## 3. AWS Lambda
+Captures every change made to the table — useful for audit logging, metrics updates, notifications, and future integrations. Optional for the challenge scope, but enabling it demonstrates readiness for event-driven extensions.
 
-Lambda functions contain the business logic.
+### 6. Amazon EventBridge *(Optional)*
 
-Each function has a single responsibility.
+Can consume events from downstream processes — e.g. *user admitted*, *queue closed*, *event started*, *token expired* — decoupling future consumers from the core application.
 
-### Join Queue Lambda
+### 7. Amazon CloudWatch
 
-Responsibilities:
+Provides logs, metrics, dashboards, and alarms. Key metrics: API latency, Lambda duration, DynamoDB throttling, error rate, admission rate.
 
-- Validate request
-- Prevent duplicate registration
-- Assign queue position
-- Store queue record
+### 8. AWS IAM
+
+Secures inter-service communication via Lambda execution roles, DynamoDB access policies, CloudWatch permissions, and API authorization — always least privilege.
 
 ---
 
-### Queue Status Lambda
+## Request Flows
 
-Responsibilities:
+### Join Queue
 
-- Retrieve queue information
-- Calculate estimated wait
-- Return current status
-
----
-
-### Token Validation Lambda
-
-Responsibilities:
-
-- Verify token exists
-- Check expiration
-- Return authorization decision
-
----
-
-### Queue Admission Lambda
-
-Responsibilities:
-
-- Select next users
-- Update queue status
-- Generate admission tokens
-
-This function may be invoked on a schedule (for example, every few seconds) or by an operational trigger.
-
----
-
-## 4. Amazon DynamoDB
-
-DynamoDB is the primary data store.
-
-Responsibilities:
-
-- Store all entities
-- Maintain queue state
-- Persist admission tokens
-- Store event metadata
-- Track statistics
-
-Features enabled:
-
-- Single Table Design
-- On-Demand Capacity
-- TTL
-- Streams
-- Point-in-Time Recovery
-- Server-Side Encryption
-
----
-
-## 5. DynamoDB Streams
-
-Streams capture changes made to the table.
-
-Possible uses:
-
-- Audit logging
-- Metrics updates
-- Notifications
-- Future integrations
-
-Although optional for the challenge, enabling Streams demonstrates readiness for event-driven extensions.
-
----
-
-## 6. Amazon EventBridge (Optional)
-
-EventBridge can consume events from downstream processes.
-
-Example events:
-
-- User admitted
-- Queue closed
-- Event started
-- Token expired
-
-This decouples future consumers from the core application.
-
----
-
-## 7. Amazon CloudWatch
-
-CloudWatch provides:
-
-- Logs
-- Metrics
-- Dashboards
-- Alarms
-
-Key metrics include:
-
-- API latency
-- Lambda duration
-- DynamoDB throttling
-- Error rate
-- Queue admission rate
-
----
-
-## 8. AWS IAM
-
-IAM secures communication between services.
-
-Examples:
-
-- Lambda execution roles
-- DynamoDB access policies
-- CloudWatch permissions
-- API authorization
-
-Least privilege should be applied.
-
----
-
-# Request Flow
-
-## Join Queue
-
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant AG as API Gateway
+    participant L as Join Queue λ
+    participant D as DynamoDB
+    C->>AG: POST /queue/join
+    AG->>L: invoke
+    L->>D: Conditional PutItem
+    D-->>L: Success
+    L-->>AG: 201 Created
+    AG-->>C: Queue position + status
 ```
-Client
-   │
-   ▼
-API Gateway
-   │
-   ▼
-Join Queue Lambda
-   │
-   ▼
-DynamoDB
-   │
-   ▼
-Success Response
+
+### Check Queue Status
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant AG as API Gateway
+    participant L as Queue Status λ
+    participant D as DynamoDB
+    C->>AG: GET /queue/status
+    AG->>L: invoke
+    L->>D: Query (GSI1)
+    D-->>L: Queue record
+    L-->>AG: 200 OK
+    AG-->>C: Position, status, estimated wait
+```
+
+### Validate Admission Token
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant AG as API Gateway
+    participant L as Validate Token λ
+    participant D as DynamoDB
+    C->>AG: POST /token/validate
+    AG->>L: invoke
+    L->>D: GetItem (GSI2)
+    D-->>L: Token record
+    L-->>AG: Allow / Deny
+    AG-->>C: 200 valid / 401 invalid
 ```
 
 ---
 
-## Check Queue Status
+## Queue Lifecycle
 
-```
-Client
-   │
-   ▼
-API Gateway
-   │
-   ▼
-Queue Status Lambda
-   │
-   ▼
-DynamoDB Query
-   │
-   ▼
-Return Queue Information
+```mermaid
+stateDiagram-v2
+    [*] --> Waiting: User registers
+    Waiting --> Admitted: Admission scheduler
+    Admitted --> TokenCreated
+    TokenCreated --> TicketPurchase
+    TicketPurchase --> Completed
+    Completed --> [*]
+    Waiting --> Expired
+    Waiting --> Cancelled
+    Expired --> [*]
+    Cancelled --> [*]
 ```
 
 ---
 
-## Validate Admission Token
+## Scalability
 
-```
-Client
-   │
-   ▼
-API Gateway
-   │
-   ▼
-Validation Lambda
-   │
-   ▼
-DynamoDB Lookup
-   │
-   ▼
-Allow / Deny
-```
+| Layer | How it scales |
+|---|---|
+| **API Gateway** | Scales automatically, no manual intervention |
+| **AWS Lambda** | Scales automatically based on incoming request volume |
+| **DynamoDB** | On-Demand capacity mode adapts automatically to changing workloads |
 
 ---
 
-# Queue Lifecycle
+## High Availability
 
-```
-User Registers
-      │
-      ▼
-Waiting
-      │
-      ▼
-Admission Scheduler
-      │
-      ▼
-Admitted
-      │
-      ▼
-Token Created
-      │
-      ▼
-Ticket Purchase
-      │
-      ▼
-Completed
-```
-
-Alternative paths:
-
-```
-Waiting
-   │
-   ▼
-Expired
-
-or
-
-Waiting
-   │
-   ▼
-Cancelled
-```
+AWS managed services provide multi-AZ resilience, automatic failover, and durable storage — no application-managed servers required anywhere in the stack.
 
 ---
 
-# Scalability
-
-The architecture scales automatically.
-
-## API Gateway
-
-Scales without manual intervention.
-
----
-
-## AWS Lambda
-
-Automatically scales based on incoming requests.
-
----
-
-## DynamoDB
-
-Configured in On-Demand mode to automatically adapt to changing workloads.
-
----
-
-# High Availability
-
-AWS managed services provide:
-
-- Multi-AZ resilience
-- Automatic failover
-- Durable storage
-- Managed infrastructure
-
-No application-managed servers are required.
-
----
-
-# Security
-
-Security considerations include:
+## Security
 
 - HTTPS-only communication
 - IAM least privilege
-- Encryption at rest
-- Encryption in transit
+- Encryption at rest and in transit
 - Input validation
 - Request authentication
-- Token expiration
+- Token expiration enforcement
 
 ---
 
-# Monitoring
+## Monitoring
 
 Recommended CloudWatch alarms:
 
 | Metric | Threshold |
-|----------|-----------|
+|---|---|
 | Lambda Errors | > 1% |
 | API 5XX Responses | > 0 |
 | DynamoDB Throttled Requests | > 0 |
@@ -428,38 +247,28 @@ Recommended CloudWatch alarms:
 
 ---
 
-# Failure Handling
+## Failure Handling
 
-The application should gracefully handle:
-
-- Duplicate registrations
-- Invalid tokens
-- Expired sessions
-- Event not found
-- Capacity exhaustion
-
-Failures return meaningful HTTP status codes and do not expose internal implementation details.
+The application gracefully handles: duplicate registrations, invalid tokens, expired sessions, event-not-found, and capacity exhaustion. Failures return meaningful HTTP status codes and never expose internal implementation details.
 
 ---
 
-# Cost Optimization
+## Cost Optimization
 
-The architecture minimizes cost by:
+- Serverless services throughout — nothing runs when idle
+- DynamoDB On-Demand capacity
+- TTL-based automatic deletion of expired items
+- No idle compute resources
+- Minimal Global Secondary Indexes
 
-- Using serverless services
-- Leveraging DynamoDB On-Demand capacity
-- Automatically deleting expired items with TTL
-- Avoiding idle compute resources
-- Using minimal Global Secondary Indexes
+Full cost model: [`13-cost-estimation.md`](13-cost-estimation.md).
 
 ---
 
-# Future Enhancements
-
-The architecture can evolve to support:
+## Future Enhancements
 
 - Multi-region deployments
-- Global tables
+- Global Tables
 - WebSocket notifications
 - Priority (VIP) queues
 - Fraud detection
@@ -468,17 +277,8 @@ The architecture can evolve to support:
 
 ---
 
-# Summary
+## Summary
 
-The proposed architecture is fully serverless, horizontally scalable, and optimized around DynamoDB.
+Fully serverless, horizontally scalable, and optimized around DynamoDB — demonstrating cloud-native design, event-driven processing, high availability, operational simplicity, cost efficiency, and production-ready engineering practices.
 
-It demonstrates:
-
-- Cloud-native design
-- Event-driven processing
-- High availability
-- Operational simplicity
-- Cost efficiency
-- Production-ready engineering practices
-
-This architecture forms the foundation for implementing the APIs and infrastructure described in the remaining documents.
+This architecture is the foundation for the API contract defined next in [`08-api-design.md`](08-api-design.md), and the infrastructure defined in `template.yaml`.

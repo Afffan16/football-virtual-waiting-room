@@ -1,177 +1,117 @@
-# AWS Builder Challenge
-# DynamoDB Football Data Modeling Challenge
+# 🏆 AWS Builder Challenge — DynamoDB Football Data Modeling Challenge
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/01-challenge-details.md`
 
-Version: 1.0
+← [Back to Project Status](00-project-status.md) · Next: [Requirements Analysis →](02-requirements-analysis.md)
 
 ---
 
-# Overview
+## Table of Contents
 
-This project is an implementation of the AWS Builder Center DynamoDB Football Data Modeling Challenge.
+- [Overview](#overview)
+- [Challenge Context](#challenge-context)
+- [Primary Goal](#primary-goal)
+- [Business Objectives](#business-objectives)
+- [Functional Requirements](#functional-requirements)
+- [Non-Functional Requirements](#non-functional-requirements)
+- [DynamoDB Requirements](#dynamodb-requirements)
+- [Assumptions](#assumptions)
+- [Constraints](#constraints)
+- [Success Criteria](#success-criteria)
+- [Deliverables](#deliverables)
+- [Technologies](#technologies)
+- [Expected Outcome](#expected-outcome)
+
+---
+
+## Overview
+
+This project is an implementation of the **AWS Builder Center DynamoDB Football Data Modeling Challenge**.
 
 The objective is to design and implement a highly scalable data model capable of supporting a virtual waiting room for extremely popular football matches. The system must efficiently manage millions of concurrent users while maintaining fairness, consistency, and low latency.
 
 Rather than focusing solely on application development, this challenge emphasizes one of the most critical aspects of building scalable cloud-native systems:
 
-> Designing an efficient DynamoDB data model based on real-world access patterns.
+> **Designing an efficient DynamoDB data model based on real-world access patterns.**
 
 ---
 
-# Challenge Context
+## Challenge Context
 
 When tickets for a high-demand football match become available, millions of supporters attempt to access the platform simultaneously.
 
-Without proper traffic management, this surge can overwhelm backend services, leading to:
+Without proper traffic management, that surge can overwhelm backend services, leading to:
 
-- Website crashes
-- Long response times
-- Lost ticket sales
-- Poor customer experience
-- Infrastructure overload
+| Failure Mode | Impact |
+|---|---|
+| 🔴 Website crashes | Platform unavailable during peak demand |
+| 🐢 Long response times | Users abandon the purchase flow |
+| 💸 Lost ticket sales | Direct revenue impact |
+| 😤 Poor customer experience | Reputational damage |
+| 🔥 Infrastructure overload | Cascading failures across services |
 
-To solve this problem, a Virtual Waiting Room is introduced.
-
-Instead of allowing every request to directly reach the ticketing service, users first enter a waiting queue where they are admitted gradually based on queue order and system capacity.
+**The fix:** a Virtual Waiting Room. Instead of every request hitting the ticketing service directly, users first enter a waiting queue where they're admitted gradually, based on queue order and system capacity.
 
 ---
 
-# Primary Goal
+## Primary Goal
 
 Build a DynamoDB-based backend capable of:
 
-- Registering users into a queue
-- Tracking queue position
-- Admitting users fairly
-- Issuing admission tokens
-- Automatically expiring inactive users
-- Scaling to millions of concurrent requests
+- [x] Registering users into a queue
+- [x] Tracking queue position
+- [x] Admitting users fairly
+- [x] Issuing admission tokens
+- [x] Automatically expiring inactive users
+- [x] Scaling to millions of concurrent requests
 
 ---
 
-# Business Objectives
+## Business Objectives
 
 The system should:
 
-- Ensure fairness
-- Prevent ticket overselling
-- Protect backend services
-- Handle sudden traffic spikes
-- Minimize operational costs
-- Maintain high availability
+- Ensure **fairness** — first in, first served
+- Prevent **ticket overselling**
+- Protect **backend services** from overload
+- Handle **sudden traffic spikes** gracefully
+- Minimize **operational costs**
+- Maintain **high availability**
 
 ---
 
-# Functional Requirements
+## Functional Requirements
 
-The system shall support the following operations.
+| Requirement | Description |
+|---|---|
+| **Queue Registration** | Users join the waiting room; each registration creates a queue record |
+| **Queue Status** | Users retrieve queue position, estimated wait time, and current status — without expensive scans |
+| **User Admission** | The platform periodically admits users from the front of the queue, preserving order |
+| **Token Generation** | Successfully admitted users receive a temporary admission token granting access to the ticket purchasing system |
+| **Token Validation** | Tokens must be validated before checkout; expired tokens are rejected |
+| **Queue Expiration** | Inactive users automatically leave the queue after a configurable timeout |
+| **Cleanup** | Expired sessions are removed automatically using DynamoDB TTL — no scheduled jobs |
 
-## Queue Registration
-
-Users should be able to join the waiting room.
-
-Each registration must create a queue record.
-
----
-
-## Queue Status
-
-Users should retrieve:
-
-- Queue position
-- Estimated waiting time
-- Current status
-
-without expensive scans.
+> See how each of these maps to a Lambda function in [`00-project-status.md`](00-project-status.md#lambda-responsibilities) and to an endpoint in [`08-api-design.md`](08-api-design.md).
 
 ---
 
-## User Admission
+## Non-Functional Requirements
 
-The platform should periodically admit users from the front of the queue.
-
-Admission should preserve ordering.
-
----
-
-## Token Generation
-
-Successfully admitted users receive a temporary admission token.
-
-The token grants access to the ticket purchasing system.
+| Requirement | Target |
+|---|---|
+| **Scalability** | Support millions of users |
+| **Low Latency** | Typical requests complete in milliseconds |
+| **High Availability** | No single point of failure |
+| **Cost Efficiency** | Minimize unnecessary reads/writes; avoid table scans |
+| **Durability** | Queue information must not be lost |
+| **Security** | Support IAM authentication; protect APIs using authorization |
 
 ---
 
-## Token Validation
+## DynamoDB Requirements
 
-Before entering checkout, tokens must be validated.
-
-Expired tokens must be rejected.
-
----
-
-## Queue Expiration
-
-Inactive users should automatically leave the queue after a configurable timeout.
-
----
-
-## Cleanup
-
-Expired sessions should be removed automatically using DynamoDB TTL.
-
----
-
-# Non-Functional Requirements
-
-The solution should provide:
-
-## Scalability
-
-Support millions of users.
-
----
-
-## Low Latency
-
-Typical requests should complete in milliseconds.
-
----
-
-## High Availability
-
-No single point of failure.
-
----
-
-## Cost Efficiency
-
-Minimize unnecessary reads and writes.
-
-Avoid table scans.
-
----
-
-## Durability
-
-Queue information must not be lost.
-
----
-
-## Security
-
-Support IAM authentication.
-
-Protect APIs using authorization.
-
----
-
-# DynamoDB Requirements
-
-The data model should follow DynamoDB best practices.
-
-Specifically:
+The data model must follow DynamoDB best practices:
 
 - Single Table Design
 - Query-first modeling
@@ -180,14 +120,14 @@ Specifically:
 - Efficient sort keys
 - Global Secondary Indexes
 - Time To Live (TTL)
-- Conditional Writes
-- Atomic Counters where appropriate
+- Conditional writes
+- Atomic counters where appropriate
+
+*(Full design in [`04-data-model.md`](04-data-model.md), [`05-table-schema.md`](05-table-schema.md), and [`06-index-design.md`](06-index-design.md).)*
 
 ---
 
-# Assumptions
-
-The following assumptions are made.
+## Assumptions
 
 - Users join using authenticated accounts.
 - Each user joins a queue only once per event.
@@ -199,51 +139,51 @@ The following assumptions are made.
 
 ---
 
-# Constraints
+## Constraints
 
 The solution should avoid:
 
-- Full table scans
-- Large hot partitions
-- Expensive joins
-- Cross-table transactions whenever possible
-- Manual cleanup jobs
+- ❌ Full table scans
+- ❌ Large hot partitions
+- ❌ Expensive joins
+- ❌ Cross-table transactions, wherever possible
+- ❌ Manual cleanup jobs
 
 ---
 
-# Success Criteria
+## Success Criteria
 
 The challenge is considered successful if the solution can:
 
-- Register users efficiently
-- Retrieve queue status quickly
-- Admit users fairly
-- Scale horizontally
-- Keep operational costs low
-- Demonstrate effective DynamoDB modeling
+- [x] Register users efficiently
+- [x] Retrieve queue status quickly
+- [x] Admit users fairly
+- [x] Scale horizontally
+- [x] Keep operational costs low
+- [x] Demonstrate effective DynamoDB modeling
 
 ---
 
-# Deliverables
+## Deliverables
 
-The completed solution should include:
-
-- DynamoDB Single Table Design
-- Access Pattern Analysis
-- Key Schema Design
-- GSI Design
-- API Design
-- Architecture Diagram
-- Infrastructure Documentation
-- Implementation Guide
-- Testing Strategy
-- Optimization Recommendations
+| Deliverable | Where it lives |
+|---|---|
+| DynamoDB Single Table Design | [`05-table-schema.md`](05-table-schema.md) |
+| Access Pattern Analysis | [`03-access-patterns.md`](03-access-patterns.md) |
+| Key Schema Design | [`05-table-schema.md`](05-table-schema.md) |
+| GSI Design | [`06-index-design.md`](06-index-design.md) |
+| API Design | [`08-api-design.md`](08-api-design.md) |
+| Architecture Diagram | [`07-system-architecture.md`](07-system-architecture.md), [`../diagrams/architecture-diagrams.md`](../diagrams/architecture-diagrams.md) |
+| Infrastructure Documentation | `template.yaml` |
+| Implementation Guide | [`10-step-by-step-build.md`](10-step-by-step-build.md) |
+| Testing Strategy | [`11-testing-plan.md`](11-testing-plan.md), [`12-load-testing.md`](12-load-testing.md) |
+| Optimization Recommendations | [`14-optimization.md`](14-optimization.md) |
 
 ---
 
-# Technologies
+## Technologies
 
-AWS Services
+**AWS Services**
 
 - Amazon DynamoDB
 - AWS Lambda
@@ -251,21 +191,21 @@ AWS Services
 - Amazon CloudWatch
 - AWS IAM
 - Amazon EventBridge
-- DynamoDB Streams (optional)
+- DynamoDB Streams *(optional)*
 
-Development
+**Development**
 
 - Python
 - Boto3
-- AWS SAM or CloudFormation
+- AWS SAM / CloudFormation
 - Git
-- Markdown Documentation
+- Markdown documentation
 
 ---
 
-# Expected Outcome
+## Expected Outcome
 
-By completing this challenge, the resulting solution will demonstrate:
+By completing this challenge, the resulting solution demonstrates:
 
 - Advanced DynamoDB data modeling
 - Event-driven architecture
@@ -273,4 +213,8 @@ By completing this challenge, the resulting solution will demonstrate:
 - Cloud-native scalability
 - Production-ready engineering practices
 
-The implementation should closely resemble a real-world ticketing system capable of supporting high-profile sporting events while remaining efficient, reliable, and cost-effective.
+The implementation should closely resemble a real-world ticketing system capable of supporting high-profile sporting events, while remaining efficient, reliable, and cost-effective.
+
+---
+
+Next: [`02-requirements-analysis.md`](02-requirements-analysis.md) translates this brief into concrete functional and non-functional requirements.

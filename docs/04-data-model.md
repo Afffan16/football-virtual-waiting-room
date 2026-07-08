@@ -1,24 +1,40 @@
-# Data Model Design
+# 🧩 Data Model Design
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/04-data-model.md`
 
-Version: 1.0
-
----
-
-# Purpose
-
-This document defines the logical data model for the Football Virtual Waiting Room.
-
-The solution follows Amazon DynamoDB's **Single Table Design** methodology, where multiple related entity types are stored within a single table and differentiated using structured keys and item attributes.
-
-The model is optimized for the access patterns identified in the previous document.
+← [Back: Access Patterns](03-access-patterns.md) · Next: [Table Schema →](05-table-schema.md)
 
 ---
 
-# Design Principles
+## Table of Contents
 
-The data model follows these principles:
+- [Purpose](#purpose)
+- [Design Principles](#design-principles)
+- [High-Level Data Model](#high-level-data-model)
+- [Entities](#entities)
+- [Item Types](#item-types)
+- [Logical Relationships](#logical-relationships)
+- [Lifecycles](#lifecycles)
+- [Data Ownership](#data-ownership)
+- [Data Consistency](#data-consistency)
+- [Queue Position Strategy](#queue-position-strategy)
+- [Time To Live (TTL)](#time-to-live-ttl)
+- [Sharding Strategy](#sharding-strategy)
+- [Aggregate Counters](#aggregate-counters)
+- [Benefits of the Model](#benefits-of-the-model)
+- [Future Extensions](#future-extensions)
+
+---
+
+## Purpose
+
+This document defines the **logical** data model for the Football Virtual Waiting Room, built on Amazon DynamoDB's **Single Table Design** methodology — multiple related entity types stored in one table, differentiated by structured keys and item attributes.
+
+The model is optimized directly for the access patterns identified in [`03-access-patterns.md`](03-access-patterns.md). The next document, [`05-table-schema.md`](05-table-schema.md), turns everything here into a concrete physical schema.
+
+---
+
+## Design Principles
 
 - Single Table Design
 - Access Pattern First
@@ -31,295 +47,119 @@ The data model follows these principles:
 
 ---
 
-# High-Level Data Model
+## High-Level Data Model
 
-The application manages six logical entity types.
+The application manages six logical entity types. Although they appear as separate concepts, **all six live in one DynamoDB table.**
 
-```
-
-Football Event
-│
-├── Queue Entries
-│
-├── Users
-│
-├── Admission Tokens
-│
-├── Sessions
-│
-└── Queue Statistics
-
-```
-
-Although these appear as separate entities, they are all stored in one DynamoDB table.
-
----
-
-# Entity 1 — Event
-
-Represents a football match.
-
-Example Attributes
-
-- Event ID
-- Match Name
-- Stadium
-- Capacity
-- Start Time
-- Queue Status
-
-Example
-
-```
-
-EVENT#1001
-
+```mermaid
+flowchart TD
+    E[🏟️ Football Event]
+    E --> Q[Queue Entries]
+    E --> S[Queue Statistics]
+    U[👤 Users]
+    U --> Q
+    U --> T[Admission Tokens]
+    U --> SE[Sessions]
+    Q --> T
 ```
 
 ---
 
-# Entity 2 — User
+## Entities
 
-Represents a registered customer.
+| Entity | Represents | Key Attributes | Example Key |
+|---|---|---|---|
+| **1. Event** | A football match | Event ID, Match Name, Stadium, Capacity, Start Time, Queue Status | `EVENT#1001` |
+| **2. User** | A registered customer | User ID, Name, Email | — (global entity, may join multiple events) |
+| **3. Queue Entry** | A user's position in a specific event's queue | Queue Position, Join Time, Status, Estimated Wait, Shard ID, Admission Time | `QUEUE#<position>` |
+| **4. Admission Token** | Issued when a user is admitted | Token ID, User ID, Event ID, Expiration, Status | `TOKEN#<id>` |
+| **5. Session** | An active waiting-room session | Session ID, Last Activity, Device ID, TTL | `SESSION#ACTIVE` |
+| **6. Queue Statistics** | Aggregate counters | Users Waiting, Users Admitted, Queue Length, Average Wait Time | `STATS` |
 
-Attributes
-
-- User ID
-- Name
-- Email
-
-Users are global entities and may participate in multiple events.
-
----
-
-# Entity 3 — Queue Entry
-
-Represents a user's position in a specific event queue.
-
-Attributes
-
-- Queue Position
-- Join Time
-- Status
-- Estimated Wait
-- Shard ID
-- Admission Time
-
-Status values
-
-- WAITING
-- ADMITTED
-- COMPLETED
-- CANCELLED
-- EXPIRED
+**Queue Entry status values:** `WAITING` · `ADMITTED` · `COMPLETED` · `CANCELLED` · `EXPIRED`
+**Admission Token states:** `ACTIVE` · `USED` · `EXPIRED`
 
 ---
 
-# Entity 4 — Admission Token
+## Item Types
 
-Generated when a user is admitted.
-
-Attributes
-
-- Token ID
-- User ID
-- Event ID
-- Expiration
-- Status
-
-Token States
-
-- ACTIVE
-- USED
-- EXPIRED
-
----
-
-# Entity 5 — Session
-
-Tracks active waiting-room sessions.
-
-Attributes
-
-- Session ID
-- Last Activity
-- Device ID
-- TTL
-
-Sessions expire automatically.
-
----
-
-# Entity 6 — Queue Statistics
-
-Stores aggregate information.
-
-Examples
-
-- Users Waiting
-- Users Admitted
-- Queue Length
-- Average Wait Time
-
-These values reduce the need for expensive aggregation queries.
-
----
-
-# Item Types
-
-Each item stored in DynamoDB belongs to one logical type.
+Every item stored in DynamoDB belongs to exactly one logical type:
 
 | Item Type | Purpose |
-|------------|----------|
-| EVENT | Football event |
-| USER | Customer |
-| QUEUE | Queue entry |
-| TOKEN | Admission token |
-| SESSION | Waiting room session |
-| STATS | Aggregate counters |
+|---|---|
+| `EVENT` | Football event |
+| `USER` | Customer |
+| `QUEUE` | Queue entry |
+| `TOKEN` | Admission token |
+| `SESSION` | Waiting-room session |
+| `STATS` | Aggregate counters |
 
 ---
 
-# Logical Relationships
+## Logical Relationships
 
-```
-
-EVENT
-│
-├── many QUEUE entries
-│
-├── many TOKENS
-│
-└── one STATS record
-
-USER
-│
-├── many QUEUE entries
-│
-├── many TOKENS
-│
-└── many SESSIONS
-
+```mermaid
+erDiagram
+    EVENT ||--o{ QUEUE_ENTRY : "has many"
+    EVENT ||--o{ TOKEN : "has many"
+    EVENT ||--|| STATS : "has one"
+    USER ||--o{ QUEUE_ENTRY : "has many"
+    USER ||--o{ TOKEN : "has many"
+    USER ||--o{ SESSION : "has many"
 ```
 
 ---
 
-# Queue Lifecycle
+## Lifecycles
 
+### Queue Entry Lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> WAITING: User registers
+    WAITING --> ADMITTED
+    ADMITTED --> TOKEN_ISSUED
+    TOKEN_ISSUED --> CHECKOUT
+    CHECKOUT --> COMPLETED
+    COMPLETED --> [*]
+    WAITING --> EXPIRED
+    WAITING --> CANCELLED
+    EXPIRED --> [*]
+    CANCELLED --> [*]
 ```
 
-User Registers
+### Admission Token Lifecycle
 
-↓
-
-WAITING
-
-↓
-
-ADMITTED
-
-↓
-
-TOKEN ISSUED
-
-↓
-
-CHECKOUT
-
-↓
-
-COMPLETED
-
+```mermaid
+stateDiagram-v2
+    [*] --> Created
+    Created --> Active
+    Active --> Used
+    Used --> [*]
+    Created --> Expired: TTL
+    Expired --> [*]
 ```
 
-Alternative paths
+TTL automatically removes expired tokens — no scheduled cleanup required.
 
-```
+### Session Lifecycle
 
-WAITING
-
-↓
-
-EXPIRED
-
-```
-
-or
-
-```
-
-WAITING
-
-↓
-
-CANCELLED
-
+```mermaid
+stateDiagram-v2
+    [*] --> SessionCreated
+    SessionCreated --> Active
+    Active --> Idle
+    Idle --> TTLExpiration
+    TTLExpiration --> Deleted
+    Deleted --> [*]
 ```
 
 ---
 
-# Admission Token Lifecycle
-
-```
-
-Created
-
-↓
-
-Active
-
-↓
-
-Used
-
-```
-
-or
-
-```
-
-Created
-
-↓
-
-Expired
-
-```
-
-TTL automatically removes expired tokens.
-
----
-
-# Session Lifecycle
-
-```
-
-Session Created
-
-↓
-
-Active
-
-↓
-
-Idle
-
-↓
-
-TTL Expiration
-
-↓
-
-Deleted
-
-```
-
----
-
-# Data Ownership
+## Data Ownership
 
 | Entity | Owner |
-|---------|--------|
+|---|---|
 | Event | Administrator |
 | User | Authentication System |
 | Queue Entry | Waiting Room |
@@ -329,121 +169,71 @@ Deleted
 
 ---
 
-# Data Consistency
+## Data Consistency
 
-The following consistency model is used.
-
-Queue Position
-
-Immutable
-
-Queue Status
-
-Mutable
-
-Token Status
-
-Mutable
-
-Session
-
-Mutable
-
-Event
-
-Mostly Immutable
-
-Statistics
-
-Frequently Updated
+| Entity / Field | Consistency Model |
+|---|---|
+| Queue Position | **Immutable** |
+| Queue Status | Mutable |
+| Token Status | Mutable |
+| Session | Mutable |
+| Event | Mostly Immutable |
+| Statistics | Frequently Updated |
 
 ---
 
-# Queue Position Strategy
+## Queue Position Strategy
 
-Queue positions are assigned when the user joins.
+Queue positions are assigned once, at join time, and **never modified**. Rather than shifting every user forward when someone ahead of them leaves, only the `status` field changes as a user progresses through admission.
 
-They should never be modified.
-
-Instead of moving users forward in the queue, their status changes as they progress through the admission process.
-
-This minimizes write operations.
+This one decision is what keeps write volume flat even as the queue churns at scale — see the cost impact discussion in [`13-cost-estimation.md`](13-cost-estimation.md).
 
 ---
 
-# Time To Live (TTL)
+## Time To Live (TTL)
 
 TTL is enabled for:
 
 - Sessions
 - Admission Tokens
 
-Benefits
-
-- Automatic cleanup
-- Lower storage cost
-- No scheduled jobs
+**Benefits:** automatic cleanup, lower storage cost, zero scheduled jobs.
 
 ---
 
-# Sharding Strategy
+## Sharding Strategy
 
-To avoid hot partitions, queue entries should be distributed across logical write shards.
-
-Conceptually:
+To avoid hot partitions when millions of users join the same event, queue entries can be distributed across logical write shards:
 
 ```
-
 EVENT#1001#SHARD#01
-
 EVENT#1001#SHARD#02
-
 EVENT#1001#SHARD#03
-
 ...
-
 EVENT#1001#SHARD#20
-
 ```
 
 Users are assigned to a shard using a deterministic hashing strategy (for example, based on User ID).
 
-Benefits
-
-- Even write distribution
-- Improved throughput
-- Better adaptive capacity
+**Benefits:** even write distribution, improved throughput, better adaptive capacity. This is a *future-ready* extension point, not required for the initial implementation — see [`05-table-schema.md#future-scalability`](05-table-schema.md#future-scalability) for how the key structure supports this without an API contract change.
 
 ---
 
-# Aggregate Counters
+## Aggregate Counters
 
-Frequently requested statistics should not require table scans.
+Frequently requested statistics shouldn't require table scans. Instead, maintain dedicated counter items that are updated atomically:
 
-Instead, maintain dedicated counter items.
-
-Example
-
-```
-
-Users Waiting
-
-Users Admitted
-
-Users Expired
-
-Average Wait
-
-```
-
-These counters can be updated atomically.
+- Users Waiting
+- Users Admitted
+- Users Expired
+- Average Wait
 
 ---
 
-# Benefits of the Model
+## Benefits of the Model
 
 - Supports millions of users
-- Query-based access
+- Query-based access only
 - Automatic expiration
 - Efficient storage
 - Minimal duplication
@@ -452,9 +242,9 @@ These counters can be updated atomically.
 
 ---
 
-# Future Extensions
+## Future Extensions
 
-The model can be extended to support:
+The model is designed to extend to:
 
 - VIP queues
 - Priority admission
@@ -466,14 +256,4 @@ The model can be extended to support:
 
 ---
 
-# Summary
-
-The logical data model establishes the core entities and relationships required for the Football Virtual Waiting Room.
-
-The next document converts these logical entities into a concrete DynamoDB table schema, including:
-
-- Partition Keys
-- Sort Keys
-- Attribute naming conventions
-- Item examples
-- Global Secondary Indexes
+Next: [`05-table-schema.md`](05-table-schema.md) converts these logical entities into a concrete physical schema — partition keys, sort keys, attribute naming conventions, item examples, and Global Secondary Indexes.

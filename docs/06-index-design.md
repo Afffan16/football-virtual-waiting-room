@@ -1,323 +1,146 @@
-# Global Secondary Index (GSI) Design
+# 🔍 Global Secondary Index (GSI) Design
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/06-index-design.md`
 
-Version: 1.0
-
----
-
-# Purpose
-
-This document defines the Global Secondary Indexes (GSIs) used by the Football Virtual Waiting Room.
-
-The primary table schema is optimized around event-based access. However, some application queries require looking up data from different perspectives, such as by User ID or Token ID.
-
-GSIs enable these alternate access patterns without requiring table scans.
-
-The design intentionally minimizes the number of GSIs to reduce storage costs, write amplification, and operational complexity.
+← [Back: Table Schema](05-table-schema.md) · Next: [System Architecture →](07-system-architecture.md)
 
 ---
 
-# Index Design Philosophy
+## Table of Contents
 
-Every GSI must satisfy at least one application access pattern.
-
-Indexes are **not** created for convenience.
-
-Each additional index increases:
-
-- Write cost
-- Storage cost
-- Replication overhead
-
-Therefore, only essential indexes are included.
-
----
-
-# Overview
-
-| Index | Purpose |
-|--------|---------|
-| GSI1 | Find Queue Entry by User |
-| GSI2 | Find Admission Token |
-| GSI3 | Administrative Event Queries (Optional) |
+- [Purpose](#purpose)
+- [Index Design Philosophy](#index-design-philosophy)
+- [Overview](#overview)
+- [GSI1 — User Queue Lookup](#gsi1--user-queue-lookup)
+- [GSI2 — Token Lookup](#gsi2--token-lookup)
+- [GSI3 — Administrative Queue View (Optional)](#gsi3--administrative-queue-view-optional)
+- [Sparse Indexes](#sparse-indexes)
+- [Projected Attributes](#projected-attributes)
+- [Read Patterns](#read-patterns)
+- [Cost Considerations](#cost-considerations)
+- [Why Not More GSIs?](#why-not-more-gsis)
+- [High Availability](#high-availability)
+- [Future Enhancements](#future-enhancements)
 
 ---
-
-# GSI1 — User Queue Lookup
 
 ## Purpose
 
-Allows the application to retrieve a user's queue entry without knowing its physical location in the table.
+The primary table schema ([`05-table-schema.md`](05-table-schema.md)) is optimized around **event-based access** — `PK = EVENT#<id>`. But some application queries need to look up data from a different angle entirely, such as by User ID or Token ID. Global Secondary Indexes enable these alternate access patterns without ever falling back to a table scan.
 
-This supports:
-
-- Queue Status
-- Resume Session
-- Mobile Refresh
-- User Dashboard
+The design intentionally minimizes the number of GSIs, to keep storage cost, write amplification, and operational complexity low.
 
 ---
 
-## Partition Key
+## Index Design Philosophy
 
-```
-GSI1PK = USER#<UserId>
-```
+> Every GSI must satisfy at least one real application access pattern. Indexes are never created for convenience.
 
----
-
-## Sort Key
-
-```
-GSI1SK = EVENT#<EventId>
-```
+Each additional index increases write cost, storage cost, and replication overhead — so only essential indexes make the cut. This directly continues the reasoning from [`03-access-patterns.md`](03-access-patterns.md): every index below traces back to a specific, numbered access pattern.
 
 ---
 
-## Example
+## Overview
 
+```mermaid
+flowchart LR
+    T[("FootballWaitingRoom<br/>Primary Table<br/>PK / SK")]
+    T -.-> G1["GSI1<br/>Find Queue Entry by User"]
+    T -.-> G2["GSI2<br/>Find Admission Token"]
+    T -.-> G3["GSI3 (optional)<br/>Administrative Event Queries"]
 ```
-GSI1PK = USER#501
 
-GSI1SK = EVENT#1001
-```
+| Index | Purpose | Serves Access Pattern |
+|---|---|---|
+| **GSI1** | Find Queue Entry by User | AP-02 Check Queue Status |
+| **GSI2** | Find Admission Token | AP-06 Validate Token |
+| **GSI3** *(optional)* | Administrative Event Queries | AP-09 Admin View / AP-10 Statistics |
 
 ---
 
-## Returns
+## GSI1 — User Queue Lookup
 
-Queue Position
+Lets the application retrieve a user's queue entry without knowing its physical location in the base table.
 
-Status
+**Supports:** Queue Status · Resume Session · Mobile Refresh · User Dashboard
 
-Join Time
+| | |
+|---|---|
+| **Partition Key** | `GSI1PK = USER#<UserId>` |
+| **Sort Key** | `GSI1SK = EVENT#<EventId>` |
+| **Example** | `GSI1PK = USER#501`, `GSI1SK = EVENT#1001` |
+| **Returns** | Queue Position, Status, Join Time, Estimated Wait, Event |
+| **Query** | `Query` where `GSI1PK = USER#501` |
 
-Estimated Wait
-
-Event
-
----
-
-## Supported Access Patterns
-
-✓ Check Queue Status
-
-✓ Resume Waiting Room
-
-✓ View Active Queues
+**Supported access patterns:** ✓ Check Queue Status · ✓ Resume Waiting Room · ✓ View Active Queues
 
 ---
 
-## Query Example
+## GSI2 — Token Lookup
 
-```
-Query
+Admission tokens must be validated before a user enters the ticket-purchasing system — and that validation has to be extremely fast.
 
-PK = USER#501
-```
+| | |
+|---|---|
+| **Partition Key** | `GSI2PK = TOKEN#ABC123` |
+| **Sort Key** | `GSI2SK = STATUS` |
+| **Returns** | Token Status, User, Event, Expiration |
+| **Query** | `GetItem` on `TOKEN#ABC123` |
 
----
-
-# GSI2 — Token Lookup
-
-## Purpose
-
-Admission tokens must be validated before allowing users to enter the ticket purchasing system.
-
-Token validation must be extremely fast.
+**Supported access patterns:** ✓ Validate Token · ✓ Check Expiration · ✓ Detect Replay
 
 ---
 
-## Partition Key
+## GSI3 — Administrative Queue View (Optional)
 
-```
-GSI2PK = TOKEN#ABC123
-```
+Not used by customer-facing APIs — exists purely for operations dashboards, monitoring, and analytics.
 
----
-
-## Sort Key
-
-```
-GSI2SK = STATUS
-```
-
----
-
-## Returns
-
-- Token Status
-- User
-- Event
-- Expiration
-
----
-
-## Supported Access Patterns
-
-✓ Validate Token
-
-✓ Check Expiration
-
-✓ Detect Replay
-
----
-
-## Query Example
-
-```
-Get Token
-
-TOKEN#ABC123
-```
-
----
-
-# GSI3 — Administrative Queue View (Optional)
-
-## Purpose
-
-Provides administrative access to queue data.
-
-Not used by customer-facing APIs.
-
-Useful for:
-
-- Operations Dashboard
-- Monitoring
-- Analytics
-
----
-
-## Partition Key
-
-```
-GSI3PK = EVENT#1001
-```
-
----
-
-## Sort Key
-
-```
-STATUS#WAITING
-```
-
----
-
-## Example
+| | |
+|---|---|
+| **Partition Key** | `GSI3PK = EVENT#1001` |
+| **Sort Key** | `STATUS#WAITING` |
 
 ```
 EVENT#1001
-
-↓
-
-WAITING
-WAITING
-WAITING
-WAITING
-ADMITTED
-EXPIRED
+   │
+   ├── WAITING
+   ├── WAITING
+   ├── WAITING
+   ├── WAITING
+   ├── ADMITTED
+   └── EXPIRED
 ```
 
----
+**Supported queries:** Waiting Users · Admitted Users · Completed Users · Expired Users
 
-## Supported Queries
-
-Waiting Users
-
-Admitted Users
-
-Completed Users
-
-Expired Users
+**Benefit:** avoids filtering large datasets client-side; supports operational dashboards directly.
 
 ---
 
-## Benefits
+## Sparse Indexes
 
-Avoids filtering large datasets.
+Some indexes only contain specific item types. GSI2, for example, contains only `TOKEN` items — non-token items simply don't populate `GSI2PK`/`GSI2SK`, so they never appear in it.
 
-Supports operational dashboards.
-
----
-
-# Sparse Indexes
-
-Some indexes only contain specific item types.
-
-Example
-
-GSI2 contains only
-
-```
-TOKEN
-```
-
-items.
-
-Benefits
-
-- Smaller index
-- Lower storage
-- Faster queries
+**Benefits:** smaller index, lower storage, faster queries.
 
 ---
 
-# Projected Attributes
+## Projected Attributes
 
-Only necessary attributes should be projected into each GSI.
+Only necessary attributes are projected into each index — every projected field is duplicated storage, so projections stay minimal.
 
----
-
-## GSI1 Projection
-
-Projected Fields
-
-- Queue Position
-- Queue Status
-- Event ID
-- Join Time
-
-Reason
-
-Supports queue lookup without fetching the base item.
+| Index | Projected Fields | Reason |
+|---|---|---|
+| **GSI1** | Queue Position, Queue Status, Event ID, Join Time | Supports queue lookup without fetching the base item |
+| **GSI2** | Status, Expiration, User ID | Enables token validation in a single request |
+| **GSI3** | Queue Position, Status, User ID | Supports administrative dashboards |
 
 ---
 
-## GSI2 Projection
-
-Projected Fields
-
-- Status
-- Expiration
-- User ID
-
-Reason
-
-Enables token validation in one request.
-
----
-
-## GSI3 Projection
-
-Projected Fields
-
-- Queue Position
-- Status
-- User ID
-
-Reason
-
-Supports administrative dashboards.
-
----
-
-# Read Patterns
+## Read Patterns
 
 | Operation | Index |
-|------------|-------|
+|---|---|
 | Queue Status | GSI1 |
 | Resume Session | GSI1 |
 | Token Validation | GSI2 |
@@ -325,45 +148,39 @@ Supports administrative dashboards.
 
 ---
 
-# Cost Considerations
+## Cost Considerations
 
-Each GSI duplicates projected attributes.
+Each GSI duplicates its projected attributes, so cost discipline matters:
 
-To minimize cost:
+- Keep projections small
+- Use sparse indexes
+- Avoid unnecessary indexes
+- Prefer `GetItem` where possible over `Query`
 
-- Keep projections small.
-- Use sparse indexes.
-- Avoid unnecessary indexes.
-- Prefer GetItem where possible.
+See [`13-cost-estimation.md`](13-cost-estimation.md) for the full cost model, including GSI write amplification.
 
 ---
 
-# Why Not More GSIs?
+## Why Not More GSIs?
 
-The following queries can already be satisfied using the primary key:
+These queries are **already** satisfiable using the primary key alone — no index needed:
 
 - Event Details
 - Queue Traversal
 - Statistics
 - Session Retrieval
 
-Creating additional GSIs would increase write costs without providing meaningful performance improvements.
+Adding GSIs for these would increase write cost without a meaningful performance gain — a violation of the "every GSI needs a justification" rule above.
 
 ---
 
-# High Availability
+## High Availability
 
-GSIs inherit DynamoDB's:
-
-- Automatic replication
-- Fault tolerance
-- Horizontal scaling
-
-No additional infrastructure is required.
+GSIs inherit DynamoDB's automatic replication, fault tolerance, and horizontal scaling. No additional infrastructure is required.
 
 ---
 
-# Future Enhancements
+## Future Enhancements
 
 If the system evolves, additional GSIs may support:
 
@@ -374,18 +191,18 @@ If the system evolves, additional GSIs may support:
 - Fraud Detection
 - Queue History
 
-These should only be added when justified by new access patterns.
+These should only be added when justified by a new, real access pattern — never speculatively.
 
 ---
 
-# Summary
-
-The proposed index strategy balances performance, scalability, and cost.
+## Summary
 
 | Index | Purpose |
-|--------|---------|
+|---|---|
 | GSI1 | User Queue Lookup |
 | GSI2 | Token Validation |
 | GSI3 | Administrative Monitoring |
 
-This design satisfies all identified access patterns while minimizing write amplification and storage overhead.
+This index strategy satisfies every access pattern identified in [`03-access-patterns.md`](03-access-patterns.md) while minimizing write amplification and storage overhead.
+
+Next: [`07-system-architecture.md`](07-system-architecture.md) places this table and its indexes into the full AWS request/response flow.

@@ -1,420 +1,193 @@
-# Requirements Analysis
+# 📋 Requirements Analysis
 
-Author: Muhammad Affan bin Aamir
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/02-requirements-analysis.md`
 
-Version: 1.0
-
----
-
-# Purpose
-
-The goal of this document is to translate the business requirements of the Football Virtual Waiting Room into technical requirements that guide the DynamoDB data model.
-
-Unlike relational databases, Amazon DynamoDB is designed using an **access pattern-first approach**. Therefore, understanding how the application interacts with the data is essential before defining partition keys, sort keys, or indexes.
+← [Back: Challenge Details](01-challenge-details.md) · Next: [Access Patterns →](03-access-patterns.md)
 
 ---
 
-# Business Problem
+## Table of Contents
 
-When tickets for a popular football match are released, millions of users may attempt to access the ticketing platform simultaneously.
+- [Purpose](#purpose)
+- [Business Problem](#business-problem)
+- [Core Business Goals](#core-business-goals)
+- [Functional Requirements](#functional-requirements)
+- [Non-Functional Requirements](#non-functional-requirements)
+- [Data Entities](#data-entities)
+- [Data Lifecycle](#data-lifecycle)
+- [DynamoDB Design Principles](#dynamodb-design-principles)
+- [Risks](#risks)
+- [Key Technical Decisions](#key-technical-decisions)
+- [Outputs of This Analysis](#outputs-of-this-analysis)
 
-Without proper request management:
+---
+
+## Purpose
+
+This document translates the business requirements of the Football Virtual Waiting Room (see [`01-challenge-details.md`](01-challenge-details.md)) into technical requirements that guide the DynamoDB data model.
+
+Unlike relational databases, Amazon DynamoDB is designed using an **access-pattern-first approach**. Understanding *how* the application interacts with the data is essential before defining partition keys, sort keys, or indexes — that derivation happens next, in [`03-access-patterns.md`](03-access-patterns.md).
+
+---
+
+## Business Problem
+
+When tickets for a popular football match are released, millions of users may attempt to access the ticketing platform simultaneously. Without proper request management:
 
 - Backend systems become overloaded.
 - Ticket inventory may become inconsistent.
 - Users experience long wait times.
 - Fairness cannot be guaranteed.
 
-The Virtual Waiting Room acts as a buffer between users and the ticketing platform by controlling admission based on queue order and system capacity.
+The Virtual Waiting Room acts as a buffer between users and the ticketing platform, controlling admission based on queue order and system capacity.
 
 ---
 
-# Core Business Goals
+## Core Business Goals
 
 The solution should:
 
-- Handle sudden traffic spikes.
-- Protect backend ticketing systems.
-- Ensure fairness in queue processing.
-- Scale to millions of concurrent users.
-- Provide users with real-time queue updates.
-- Automatically clean up expired sessions.
-- Minimize infrastructure costs.
+- Handle sudden traffic spikes
+- Protect backend ticketing systems
+- Ensure fairness in queue processing
+- Scale to millions of concurrent users
+- Provide users with real-time queue updates
+- Automatically clean up expired sessions
+- Minimize infrastructure costs
 
 ---
 
-# Functional Requirements
+## Functional Requirements
 
-## FR-01: Register a User
+Each requirement below is written with its DynamoDB implications up front, since that's what ultimately drives the schema in later documents.
+
+### FR-01 — Register a User
 
 A user should be able to join the waiting room for a specific football event.
 
-### Inputs
+| | |
+|---|---|
+| **Inputs** | User ID, Event ID, Timestamp |
+| **Expected Outcome** | Queue record created · queue position assigned · user receives confirmation |
+| **DynamoDB Implications** | Fast write · no duplicate queue entries · conditional writes to prevent duplicate registration |
 
-- User ID
-- Event ID
-- Timestamp
-
-### Expected Outcome
-
-- Queue record is created.
-- Queue position is assigned.
-- User receives confirmation.
-
-### DynamoDB Implications
-
-- Fast write operation
-- No duplicate queue entries
-- Conditional writes to prevent duplicate registration
-
----
-
-## FR-02: Retrieve Queue Status
+### FR-02 — Retrieve Queue Status
 
 Users should be able to check their current queue status.
 
-### Information Returned
+| | |
+|---|---|
+| **Returns** | Queue position, queue status, estimated waiting time, event information |
+| **DynamoDB Implications** | Query by User ID · no table scans · low-latency reads |
 
-- Queue position
-- Queue status
-- Estimated waiting time
-- Event information
-
-### DynamoDB Implications
-
-- Query by User ID
-- No table scans
-- Low-latency reads
-
----
-
-## FR-03: Admit Users
+### FR-03 — Admit Users
 
 The system periodically admits users from the front of the queue.
 
-### Expected Behaviour
+| | |
+|---|---|
+| **Expected Behavior** | Users admitted in order · queue fairness maintained · admission capacity configurable |
+| **DynamoDB Implications** | Efficient retrieval of the next eligible users · ordered queries · minimal read cost |
 
-- Users are admitted in order.
-- Queue fairness is maintained.
-- Admission capacity is configurable.
+### FR-04 — Generate Admission Token
 
-### DynamoDB Implications
+When a user is admitted, generate a temporary access token, associate it with the user, and define an expiration time.
 
-- Efficient retrieval of the next eligible users
-- Ordered queries
-- Minimal read cost
+| | |
+|---|---|
+| **DynamoDB Implications** | Fast writes · TTL support · token lookup |
 
----
+### FR-05 — Validate Token
 
-## FR-04: Generate Admission Token
+Before accessing ticket purchasing services, validate the token, ensure it's active, and reject expired tokens.
 
-When a user is admitted:
+| | |
+|---|---|
+| **DynamoDB Implications** | Query by Token ID · very low latency · no scans |
 
-- Generate a temporary access token.
-- Associate the token with the user.
-- Define an expiration time.
-
-### DynamoDB Implications
-
-- Fast writes
-- TTL support
-- Token lookup
-
----
-
-## FR-05: Validate Token
-
-Before accessing ticket purchasing services:
-
-- Validate token.
-- Ensure token is active.
-- Reject expired tokens.
-
-### DynamoDB Implications
-
-- Query by Token ID
-- Very low latency
-- No scans
-
----
-
-## FR-06: Remove Expired Users
+### FR-06 — Remove Expired Users
 
 Inactive users should automatically leave the queue.
 
-### Expected Behaviour
+| | |
+|---|---|
+| **Expected Behavior** | Expired records disappear automatically · no scheduled cleanup jobs |
+| **DynamoDB Implications** | DynamoDB TTL · automatic expiration |
 
-- Expired records disappear automatically.
-- No scheduled cleanup jobs.
-
-### DynamoDB Implications
-
-- DynamoDB TTL
-- Automatic expiration
-
----
-
-## FR-07: Support Multiple Events
+### FR-07 — Support Multiple Events
 
 The platform must support multiple football matches simultaneously.
 
-### Expected Behaviour
-
-- Independent queues
-- Independent capacities
-- Independent admission rates
-
-### DynamoDB Implications
-
-- Event-aware partitioning
-- Prevent cross-event interference
+| | |
+|---|---|
+| **Expected Behavior** | Independent queues · independent capacities · independent admission rates |
+| **DynamoDB Implications** | Event-aware partitioning · prevent cross-event interference |
 
 ---
 
-# Non-Functional Requirements
+## Non-Functional Requirements
 
-## Scalability
-
-Target:
-
-Millions of concurrent users.
-
-Technical Requirement
-
-- Horizontal scaling
-- Partition distribution
-- Adaptive capacity
+| Requirement | Target | Technical Requirement |
+|---|---|---|
+| **Scalability** | Millions of concurrent users | Horizontal scaling · partition distribution · adaptive capacity |
+| **Availability** | 99.99% | Fully managed infrastructure · multi-AZ storage · no single point of failure |
+| **Performance** | Single-digit millisecond latency | Query operations only · avoid scans · efficient indexing |
+| **Cost Efficiency** | Lowest possible read/write cost | Minimal GSIs · projection optimization · sparse indexes where appropriate |
+| **Security** | Secure API access | IAM authentication · API authorization · encryption at rest |
 
 ---
 
-## Availability
+## Data Entities
 
-Target:
+The solution revolves around five primary entities — these become the item types in the single-table design ([`04-data-model.md`](04-data-model.md)).
 
-99.99% availability.
-
-Technical Requirement
-
-- Fully managed infrastructure
-- Multi-AZ storage
-- No single point of failure
-
----
-
-## Performance
-
-Target
-
-Single-digit millisecond latency.
-
-Technical Requirement
-
-- Query operations only
-- Avoid scans
-- Efficient indexing
+| Entity | Represents | Example Attributes |
+|---|---|---|
+| **Event** | A football match | Event ID, Stadium, Match Name, Capacity, Start Time |
+| **User** | A customer entering the waiting room | User ID, Name, Email, Registration Time |
+| **Queue Entry** | A user's position within an event queue | Queue Position, Status, Join Time, Admission Time |
+| **Admission Token** | Temporary credential issued on admission | Token ID, Expiration Time, Status |
+| **Session** | An active waiting-room session | Session ID, Last Activity, Device Information, Expiration |
 
 ---
 
-## Cost Efficiency
+## Data Lifecycle
 
-Target
-
-Lowest possible read/write cost.
-
-Technical Requirement
-
-- Minimal GSIs
-- Projection optimization
-- Sparse indexes where appropriate
-
----
-
-## Security
-
-Target
-
-Secure API access.
-
-Technical Requirement
-
-- IAM authentication
-- API authorization
-- Encryption at rest
-
----
-
-# Data Entities
-
-The solution revolves around five primary entities.
-
----
-
-## Event
-
-Represents a football match.
-
-Example Attributes
-
-- Event ID
-- Stadium
-- Match Name
-- Capacity
-- Start Time
-
----
-
-## User
-
-Represents a customer entering the waiting room.
-
-Example Attributes
-
-- User ID
-- Name
-- Email
-- Registration Time
-
----
-
-## Queue Entry
-
-Represents a user's position within an event queue.
-
-Example Attributes
-
-- Queue Position
-- Status
-- Join Time
-- Admission Time
-
----
-
-## Admission Token
-
-Temporary credential issued when a user is admitted.
-
-Example Attributes
-
-- Token ID
-- Expiration Time
-- Status
-
----
-
-## Session
-
-Tracks an active waiting room session.
-
-Example Attributes
-
-- Session ID
-- Last Activity
-- Device Information
-- Expiration
-
----
-
-# Data Lifecycle
-
-The expected lifecycle is illustrated below.
-
-```
-User
-    │
-    ▼
-Join Queue
-    │
-    ▼
-Waiting
-    │
-    ▼
-Admitted
-    │
-    ▼
-Token Issued
-    │
-    ▼
-Ticket Purchase
-    │
-    ▼
-Completed
-```
-
-Alternative paths:
-
-```
-Waiting
-      │
-      ▼
-Timeout
-
-or
-
-Waiting
-      │
-      ▼
-Cancelled
+```mermaid
+flowchart TD
+    A[User] --> B[Join Queue]
+    B --> C[Waiting]
+    C --> D[Admitted]
+    D --> E[Token Issued]
+    E --> F[Ticket Purchase]
+    F --> G[Completed]
+    C -->|Timeout| H[Expired]
+    C -->|User cancels| I[Cancelled]
 ```
 
 ---
 
-# DynamoDB Design Principles
+## DynamoDB Design Principles
 
-The following DynamoDB best practices will guide the implementation.
+These principles guide every schema decision made in the documents that follow:
 
-## Single Table Design
-
-Store all related entities in one table whenever practical.
-
----
-
-## Access Pattern Driven
-
-Schema design must satisfy application queries rather than relational normalization.
-
----
-
-## Query over Scan
-
-Every operation should be implemented using Query or GetItem.
-
-Table scans should be avoided.
+| Principle | Summary |
+|---|---|
+| **Single Table Design** | Store all related entities in one table whenever practical |
+| **Access Pattern Driven** | Schema satisfies application queries, not relational normalization |
+| **Query over Scan** | Every operation uses `Query` or `GetItem` — never a table scan |
+| **Immutable Queue Position** | Positions are never rewritten; status transitions track progress instead |
+| **Time To Live (TTL)** | Expired sessions and tokens are removed automatically |
+| **Conditional Writes** | Prevent duplicate registrations and race conditions during admission |
+| **Minimal GSIs** | Indexes exist only when required by a supported access pattern |
 
 ---
 
-## Immutable Queue Position
-
-Queue positions should not be updated after assignment.
-
-Instead, status transitions indicate progress through the queue.
-
----
-
-## Time To Live (TTL)
-
-Expired sessions and tokens should be removed automatically.
-
----
-
-## Conditional Writes
-
-Prevent duplicate registrations.
-
-Prevent race conditions during admission.
-
----
-
-## Global Secondary Indexes (GSIs)
-
-Indexes should only exist when required by a supported access pattern.
-
----
-
-# Risks
+## Risks
 
 | Risk | Mitigation |
-|------|------------|
-| Hot partitions | Distribute partition keys where appropriate |
+|---|---|
+| Hot partitions | Distribute partition keys where appropriate (see sharding strategy in [`04-data-model.md`](04-data-model.md)) |
 | Duplicate registrations | Conditional writes |
 | Token replay | Token expiration and validation |
 | Queue starvation | Ordered admission logic |
@@ -422,28 +195,28 @@ Indexes should only exist when required by a supported access pattern.
 
 ---
 
-# Key Technical Decisions
+## Key Technical Decisions
 
 | Decision | Reason |
-|----------|--------|
+|---|---|
 | Single-table design | Reduced complexity and lower cost |
-| TTL enabled | Automatic cleanup |
+| TTL enabled | Automatic cleanup, no cron jobs |
 | Conditional writes | Data consistency |
 | Query-first modeling | High performance |
-| Event-based partitioning | Independent queues |
+| Event-based partitioning | Independent queues per match |
 | GSIs only where required | Cost optimization |
 
 ---
 
-# Outputs of this Analysis
+## Outputs of This Analysis
 
-This requirements analysis provides the foundation for:
+This requirements analysis feeds directly into:
 
-- Access Pattern Analysis
-- DynamoDB Single Table Design
-- Primary Key Strategy
-- Global Secondary Index Design
-- API Design
-- Infrastructure Implementation
-
-These topics are covered in the subsequent documentation.
+| Next Document | Covers |
+|---|---|
+| [`03-access-patterns.md`](03-access-patterns.md) | Every query the application needs to serve |
+| [`04-data-model.md`](04-data-model.md) | DynamoDB Single Table Design |
+| [`05-table-schema.md`](05-table-schema.md) | Primary Key Strategy |
+| [`06-index-design.md`](06-index-design.md) | Global Secondary Index Design |
+| [`08-api-design.md`](08-api-design.md) | REST API Design |
+| `template.yaml` | Infrastructure Implementation |
