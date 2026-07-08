@@ -96,11 +96,12 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         now = utc_now_iso()
         token_expires_at = epoch_minutes_from_now(TOKEN_TTL_MINUTES)
 
+        last_admitted_position = ""
         # ----- Process each waiting user -----
         for item in waiting_items:
             user_id = item.get("userId")
-            queue_position = int(item.get("queuePosition", 0))
-            padded = str(queue_position).zfill(QUEUE_POSITION_PAD_LENGTH)
+            queue_position = item.get("queuePosition", "")
+            padded = queue_position
 
             # 1. Update queue entry status to ADMITTED conditionally
             pk = f"{EVENT_PREFIX}{event_id}"
@@ -145,12 +146,17 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
             admitted_count += 1
             admitted_user_ids.append(user_id)
+            last_admitted_position = queue_position
 
         # ----- Update statistics -----
         stats_pk = f"{EVENT_PREFIX}{event_id}"
         if admitted_count > 0:
-            atomic_increment(stats_pk, STATS_SK, "waitingUsers", increment=-admitted_count)
-            atomic_increment(stats_pk, STATS_SK, "admittedUsers", increment=admitted_count)
+            update_item(
+                pk=stats_pk,
+                sk=STATS_SK,
+                update_expression="ADD admittedUsers :inc SET currentlyServingPosition = :serving",
+                expression_values={":inc": admitted_count, ":serving": last_admitted_position}
+            )
 
         # ----- Get remaining queue count -----
         stats = get_event_stats(event_id) or {}

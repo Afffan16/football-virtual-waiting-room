@@ -51,21 +51,32 @@ def generate_token_id() -> str:
 # ============================================================================
 
 
-def format_queue_position(position: int) -> str:
-    """Zero-pad a queue position for use as a DynamoDB sort key."""
-    return str(position).zfill(QUEUE_POSITION_PAD_LENGTH)
-
-
-def estimate_wait_minutes(position: int, admitted_so_far: int = 0) -> int:
-    """Provide a rough estimated wait time in minutes.
-
-    This is a simple linear estimate based on queue position and
-    the configured processing rate. In production this would be
-    replaced with a more sophisticated model.
+def generate_queue_position() -> str:
+    """Generate a lexicographically sortable queue position string.
+    Format: <timestamp_ms>-<uuid> to guarantee fair ordering and tie-breaking.
     """
-    remaining = max(0, position - admitted_so_far)
-    wait_seconds = remaining * ESTIMATED_SECONDS_PER_POSITION
-    return max(1, wait_seconds // 60)
+    timestamp_ms = int(time.time() * 1000)
+    jitter = uuid.uuid4().hex[:8]
+    return f"{timestamp_ms:014d}-{jitter}"
+
+
+def estimate_wait_minutes(my_position: str, currently_serving_position: str = "") -> int:
+    """Provide an estimated wait time in minutes based on timestamp difference.
+    If currently_serving_position is empty, we assume they are serving the queue start.
+    """
+    if not my_position or "-" not in my_position:
+        return 0
+        
+    try:
+        my_ts = int(my_position.split("-")[0])
+        serving_ts = int(currently_serving_position.split("-")[0]) if currently_serving_position else (my_ts - 60000) # Assumes queue started 1 min ago if empty
+        
+        # Estimate: 1 minute of wait for every 10 seconds of queue backlog
+        # This is a dummy estimation strategy for the challenge
+        diff_seconds = max(0, (my_ts - serving_ts) / 1000)
+        return max(1, int(diff_seconds / 10))
+    except ValueError:
+        return 1
 
 
 # ============================================================================

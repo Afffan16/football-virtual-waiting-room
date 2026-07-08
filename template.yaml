@@ -45,7 +45,6 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      TableName: FootballWaitingRoom
       BillingMode: PAY_PER_REQUEST
       KeySchema:
         - AttributeName: PK
@@ -154,7 +153,6 @@ Resources:
   JoinQueueFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: football-wr-join-queue
       Description: Registers a user in the waiting room queue
       CodeUri: src/
       Handler: join_queue.app.lambda_handler
@@ -177,7 +175,6 @@ Resources:
   QueueStatusFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: football-wr-queue-status
       Description: Retrieves current queue status for a user
       CodeUri: src/
       Handler: queue_status.app.lambda_handler
@@ -196,7 +193,6 @@ Resources:
   LeaveQueueFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: football-wr-leave-queue
       Description: Allows a user to voluntarily leave the queue
       CodeUri: src/
       Handler: leave_queue.app.lambda_handler
@@ -215,7 +211,6 @@ Resources:
   AdmitUsersFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: football-wr-admit-users
       Description: Admits the next batch of waiting users
       CodeUri: src/
       Handler: admit_users.app.lambda_handler
@@ -239,7 +234,6 @@ Resources:
   ValidateTokenFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: football-wr-validate-token
       Description: Validates an admission token before checkout
       CodeUri: src/
       Handler: validate_token.app.lambda_handler
@@ -258,7 +252,6 @@ Resources:
   EventLookupFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: football-wr-event-lookup
       Description: Returns metadata for a football event
       CodeUri: src/
       Handler: event_lookup.app.lambda_handler
@@ -277,7 +270,6 @@ Resources:
   StatisticsFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: football-wr-statistics
       Description: Returns aggregate queue statistics for an event
       CodeUri: src/
       Handler: statistics.app.lambda_handler

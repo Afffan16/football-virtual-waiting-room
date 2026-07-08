@@ -1,8 +1,28 @@
-# Football Virtual Waiting Room — Architecture Diagrams
+# 🗺️ Architecture Diagrams
+
+**Document:** `diagrams/architecture-diagrams.md`
+
+← [Back to Project Status](../docs/00-project-status.md)
+
+Companion diagrams for [`07-system-architecture.md`](../docs/07-system-architecture.md) and [`05-table-schema.md`](../docs/05-table-schema.md). Where those documents use Mermaid for flow and sequence diagrams, the diagrams here use precise ASCII layouts — better suited for showing exact key structures, byte-for-byte item shapes, and permission boundaries.
+
+---
+
+## Table of Contents
+
+- [1. High-Level System Architecture](#1-high-level-system-architecture)
+- [2. DynamoDB Single Table Design](#2-dynamodb-single-table-design)
+- [3. User Journey Flow](#3-user-journey-flow)
+- [4. API Endpoint Map](#4-api-endpoint-map)
+- [5. IAM Permission Model](#5-iam-permission-model)
+- [6. TTL & Streams Cleanup Flow](#6-ttl--streams-cleanup-flow)
+- [7. CI/CD Pipeline](#7-cicd-pipeline)
 
 ---
 
 ## 1. High-Level System Architecture
+
+End-to-end request path, from client to storage to observability. Matches the component breakdown in [`07-system-architecture.md#component-details`](../docs/07-system-architecture.md#component-details).
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -78,6 +98,8 @@
 
 ## 2. DynamoDB Single Table Design
 
+The physical layout behind [`05-table-schema.md`](../docs/05-table-schema.md), with all three GSIs from [`06-index-design.md`](../docs/06-index-design.md) shown side by side.
+
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                     FootballWaitingRoom Table                            │
@@ -122,6 +144,8 @@
 ---
 
 ## 3. User Journey Flow
+
+The same happy path shown as a sequence diagram in [`07-system-architecture.md#request-flows`](../docs/07-system-architecture.md#request-flows), here shown with the specific DynamoDB operation behind every step.
 
 ```
   ┌──────────┐
@@ -199,6 +223,8 @@
 
 ## 4. API Endpoint Map
 
+Every route from [`08-api-design.md`](../docs/08-api-design.md), mapped to its Lambda function and the exact DynamoDB calls each one makes.
+
 ```
   API Gateway (WaitingRoomApi)
   │
@@ -237,6 +263,8 @@
 
 ## 5. IAM Permission Model
 
+Every Lambda gets exactly the access it needs and nothing more — the least-privilege split described in [`07-system-architecture.md#8-aws-iam`](../docs/07-system-architecture.md#8-aws-iam).
+
 ```
   ┌─────────────────────┐     ┌────────────────────────┐
   │  Read-Only Lambdas  │     │  Read-Write Lambdas    │
@@ -256,4 +284,75 @@
               │  DynamoDB Table  │
               │  (FootballWR)    │
               └──────────────────┘
+```
+
+---
+
+## 6. TTL & Streams Cleanup Flow
+
+How expired items actually leave the table, and how that change becomes visible downstream — the mechanics behind [`04-data-model.md#time-to-live-ttl`](../docs/04-data-model.md#time-to-live-ttl).
+
+```
+┌────────────────────────┐
+│  Session / Token Item   │
+│  ttl = <unix timestamp> │
+└───────────┬─────────────┘
+            │
+            │  Current time passes ttl
+            ▼
+┌─────────────────────────────────────────┐
+│  DynamoDB TTL Background Sweep           │
+│  (asynchronous — not instantaneous)      │
+└───────────┬───────────────────────────────┘
+            │
+            │  Item removed
+            ▼
+┌─────────────────────────────────────────┐
+│  DynamoDB Streams                        │
+│  REMOVE event (with old image)           │
+└───────────┬───────────────────────────────┘
+            │
+            ▼
+┌─────────────────────────────────────────┐
+│  Amazon EventBridge (optional)           │
+│  → future consumers: audit log,          │
+│    notifications, analytics              │
+└─────────────────────────────────────────┘
+
+  No scheduled Lambda. No cron job. No manual cleanup.
+```
+
+---
+
+## 7. CI/CD Pipeline
+
+The automated path from a pushed commit to a validated build, per the CI pipeline referenced in [`00-project-status.md#infrastructure`](../docs/00-project-status.md#infrastructure).
+
+```
+┌──────────────┐     ┌───────────────────┐     ┌────────────────────┐
+│  git push /   │────▶│  GitHub Actions   │────▶│   sam validate     │
+│  Pull Request │     │  workflow trigger │     │   (template check) │
+└──────────────┘     └───────────────────┘     └──────────┬──────────┘
+                                                            │
+                                                            ▼
+                                                ┌────────────────────┐
+                                                │  Install deps       │
+                                                │  (requirements.txt, │
+                                                │   requirements-dev) │
+                                                └──────────┬──────────┘
+                                                            │
+                                                            ▼
+                                                ┌────────────────────┐
+                                                │  pytest             │
+                                                │  unit + integration │
+                                                │  + API test suites  │
+                                                └──────────┬──────────┘
+                                                            │
+                                                    pass ───┴─── fail
+                                                     │              │
+                                                     ▼              ▼
+                                          ┌────────────────┐  ┌───────────────┐
+                                          │  sam build      │  │  Block merge   │
+                                          │  (build check)  │  │  Report failure│
+                                          └────────────────┘  └───────────────┘
 ```

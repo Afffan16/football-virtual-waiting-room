@@ -1,37 +1,63 @@
-# Postman Collection
+# 📮 Postman Collection
 
-This folder contains the Postman collections used to test the Football Virtual Waiting Room APIs.
+**Document:** `postman/README.md`
 
-## APIs
+This folder contains the Postman collection and environment used to exercise the Football Virtual Waiting Room REST API — the same endpoints documented in [`../docs/08-api-design.md`](../docs/08-api-design.md).
 
-- Join Queue
-- Queue Status
-- Leave Queue
-- Validate Token
-- Event Lookup
-- Queue Statistics
+---
+
+## Table of Contents
+
+- [Covered APIs](#covered-apis)
+- [Environment Variables](#environment-variables)
+- [Import](#import)
+- [Suggested Run Order](#suggested-run-order)
+
+---
+
+## Covered APIs
+
+| Request | Endpoint |
+|---|---|
+| Join Queue | `POST /queue/join` |
+| Queue Status | `GET /queue/status` |
+| Leave Queue | `POST /queue/leave` |
+| Admit Users | `POST /queue/admit` |
+| Validate Token | `POST /token/validate` |
+| Event Lookup | `GET /event/{eventId}` |
+| Queue Statistics | `GET /event/{eventId}/stats` |
+
+Full request/response contracts for each of these live in [`08-api-design.md`](../docs/08-api-design.md).
+
+---
 
 ## Environment Variables
 
 | Variable | Description |
-|----------|-------------|
-| baseUrl | API Gateway URL |
-| eventId | Sample Event |
-| userId | Sample User |
-| token | Admission Token |
+|---|---|
+| `baseUrl` | API Gateway base URL for the deployed stack |
+| `eventId` | Sample event ID to test against |
+| `userId` | Sample user ID to test against |
+| `token` | Admission token, captured from a successful admission for use in token validation |
+
+---
 
 ## Import
 
-Open Postman.
+1. Open Postman.
+2. Import the collection file from this folder.
+3. Import the environment file from this folder.
+4. Select the imported environment in the top-right environment picker before sending any requests.
 
-Import:
+---
 
-- Collection
-- Environment
+## Suggested Run Order
 
-Execute requests in order:
+Requests are easiest to follow in the same order a real user would move through the waiting room:
 
-1. Join Queue
-2. Queue Status
-3. Admit User
-4. Validate Token
+1. **Join Queue** — registers the sample user and returns a queue position
+2. **Queue Status** — confirms the registration and current position
+3. **Admit User** *(admin)* — moves the user from `WAITING` to `ADMITTED` and issues a token
+4. **Validate Token** — confirms the issued token is active before checkout
+
+Running them out of order works too — for example, calling **Validate Token** before **Admit User** should correctly return an unauthorized response, which is a useful check in itself.

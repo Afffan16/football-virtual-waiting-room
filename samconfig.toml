@@ -17,8 +17,8 @@ lint = true
 capabilities = "CAPABILITY_IAM"
 confirm_changeset = true
 resolve_s3 = true
-stack_name = "football-waiting-room-prod"
-s3_prefix = "football-waiting-room-prod"
+stack_name = "football-waiting-room-test"
+s3_prefix = "football-waiting-room-test"
 parameter_overrides = "StageName=\"Prod\" TokenTTLMinutes=\"15\" SessionTTLMinutes=\"30\" DefaultBatchSize=\"50\""
 image_repositories = []
 

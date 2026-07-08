@@ -103,7 +103,7 @@ class QueueEntry:
 
     event_id: str
     user_id: str
-    queue_position: int
+    queue_position: str
     status: str
     join_time: str
     estimated_wait: int = 0
@@ -113,7 +113,7 @@ class QueueEntry:
 
     def to_item(self) -> dict[str, Any]:
         """Serialize to a DynamoDB item dictionary."""
-        padded_position = str(self.queue_position).zfill(QUEUE_POSITION_PAD_LENGTH)
+        padded_position = self.queue_position
         return {
             "PK": f"{EVENT_PREFIX}{self.event_id}",
             "SK": f"{QUEUE_PREFIX}{padded_position}",
@@ -141,7 +141,7 @@ class QueueEntry:
         return cls(
             event_id=item.get("eventId", ""),
             user_id=item.get("userId", ""),
-            queue_position=int(item.get("queuePosition", 0)),
+            queue_position=item.get("queuePosition", ""),
             status=item.get("status", ""),
             join_time=item.get("joinTime", ""),
             estimated_wait=int(item.get("estimatedWait", 0)),

@@ -43,6 +43,7 @@ from common.logger import logger
 from common.responses import bad_request, conflict, created, forbidden, internal_error, not_found
 from common.utils import (
     estimate_wait_minutes,
+    generate_queue_position,
     parse_body,
     utc_now_iso,
     validate_required_fields,
@@ -80,25 +81,25 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             logger.info("User already registered — returning existing entry")
             return created({
                 "message": "Already registered.",
-                "queuePosition": int(existing.get("queuePosition", 0)),
+                "queuePosition": existing.get("queuePosition", ""),
                 "status": existing.get("status", STATUS_WAITING),
                 "estimatedWaitMinutes": int(existing.get("estimatedWait", 0)),
             })
 
-        # ----- Assign queue position via atomic counter -----
+        # ----- Assign queue position via timestamp + jitter -----
         stats_pk = f"{EVENT_PREFIX}{event_id}"
-        new_position = atomic_increment(stats_pk, STATS_SK, "totalUsers")
+        new_position = generate_queue_position()
 
         # ----- Estimate wait -----
-        admitted_so_far = 0
+        currently_serving = ""
         stats_item = get_item(stats_pk, STATS_SK)
         if stats_item:
-            admitted_so_far = int(stats_item.get("admittedUsers", 0))
-        estimated_wait = estimate_wait_minutes(new_position, admitted_so_far)
+            currently_serving = stats_item.get("currentlyServingPosition", "")
+        estimated_wait = estimate_wait_minutes(new_position, currently_serving)
 
         # ----- Build queue item -----
         now = utc_now_iso()
-        padded = str(new_position).zfill(QUEUE_POSITION_PAD_LENGTH)
+        padded = new_position
         queue_item: dict[str, Any] = {
             "PK": f"{EVENT_PREFIX}{event_id}",
             "SK": f"{QUEUE_PREFIX}{padded}",
@@ -125,8 +126,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if not success:
             return conflict("Queue entry already exists for this position.")
 
-        # ----- Update waiting users counter -----
-        atomic_increment(stats_pk, STATS_SK, "waitingUsers")
+        # We intentionally do not use atomic_increment for waitingUsers here
+        # to prevent hot partitions during the 10-million user stampede.
 
         logger.info("User successfully joined queue", extra={"queuePosition": new_position})
 
