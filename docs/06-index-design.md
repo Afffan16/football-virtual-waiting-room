@@ -157,7 +157,7 @@ Each GSI duplicates its projected attributes, so cost discipline matters:
 - Avoid unnecessary indexes
 - Prefer `GetItem` where possible over `Query`
 
-See [`13-cost-estimation.md`](13-cost-estimation.md) for the full cost model, including GSI write amplification.
+See [`10-cost-estimation.md`](10-cost-estimation.md) for the full cost model, including GSI write amplification.
 
 ---
 

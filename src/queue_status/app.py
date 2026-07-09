@@ -31,6 +31,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if not event_id or not user_id:
             return bad_request("Query parameters 'eventId' and 'userId' are required.")
 
+        # ----- Sanitize input lengths -----
+        if len(event_id) > 64 or len(user_id) > 128:
+            return bad_request("eventId or userId exceeds maximum allowed length.")
+
         logger.append_keys(eventId=event_id, userId=user_id)
         logger.info("Processing queue status request")
 

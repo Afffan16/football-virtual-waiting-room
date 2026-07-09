@@ -6,21 +6,21 @@
 
 *AWS Builder Center — DynamoDB Data Modeling Challenge*
 
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.14-3776AB?logo=python&logoColor=white)
 ![AWS SAM](https://img.shields.io/badge/AWS-SAM-FF9900?logo=amazonaws&logoColor=white)
 ![DynamoDB](https://img.shields.io/badge/Amazon-DynamoDB-4053D6?logo=amazondynamodb&logoColor=white)
 ![Lambda](https://img.shields.io/badge/AWS-Lambda-FF9900?logo=awslambda&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
-![Status](https://img.shields.io/badge/Status-Core%20Implementation%20Complete-brightgreen)
+![Status](https://img.shields.io/badge/Status-Deployed%20%26%20Live-brightgreen)
 
 [Overview](#-overview) •
 [Architecture](#-architecture) •
 [Data Model](#-data-model) •
 [API](#-api-reference) •
 [Getting Started](#-getting-started) •
+[Deployment](#-deployment) •
 [Testing](#-testing) •
-[Docs](#-full-documentation) •
-[Roadmap](#-roadmap)
+[Docs](#-full-documentation)
 
 </div>
 
@@ -45,6 +45,7 @@ It was built for the **AWS Builder Center DynamoDB Data Modeling Challenge**, so
 - 🔑 Issues short-lived admission tokens
 - ⏳ Auto-expires idle sessions & tokens (TTL)
 - 📊 Serves real-time queue statistics
+- 🛡️ Admin endpoint protected by API key auth
 
 </td>
 <td width="50%" valign="top">
@@ -55,11 +56,29 @@ It was built for the **AWS Builder Center DynamoDB Data Modeling Challenge**, so
 - Query-only, scan-free data access
 - Serverless cost efficiency
 - Infrastructure as Code (AWS SAM)
+- Security: input validation, admin auth, throttling
 - Production-grade test coverage
 
 </td>
 </tr>
 </table>
+
+---
+
+## 🖥️ Frontend
+
+A glassmorphism dark-themed **Single Page Application** with four views:
+
+| View | Description |
+|---|---|
+| **Home** | Role selection (Admin / User), live stats bar |
+| **Admin Dashboard** | Batch admit controls, live queue stats, request table with filters, activity log |
+| **Events List** | Grid of 6 football events with live status badges |
+| **Event Detail** | Join queue, check status, leave queue — full user workflow |
+
+Files: `frontend/index.html`, `frontend/styles.css`, `frontend/app.js`
+
+To run locally: open `frontend/index.html` in a browser, or serve with `python -m http.server 8080 --directory frontend`.
 
 ---
 
@@ -69,31 +88,32 @@ Fully serverless — no servers to patch, no capacity to pre-provision.
 
 ```mermaid
 flowchart TD
-    Client["🌐 Client<br/>Web / Mobile / API Consumer"] -->|HTTPS| APIGW["🚪 Amazon API Gateway<br/>REST API · CORS · X-Ray"]
+    Client["🌐 Client\nWeb Browser"] -->|HTTPS| APIGW["🚪 Amazon API Gateway\nREST API · Throttling · CORS"]
 
     APIGW --> L1["λ Join Queue"]
     APIGW --> L2["λ Queue Status"]
     APIGW --> L3["λ Leave Queue"]
-    APIGW --> L4["λ Admit Users"]
+    APIGW -->|"x-admin-api-key\nrequired"| L4["λ Admit Users 🔐"]
     APIGW --> L5["λ Validate Token"]
     APIGW --> L6["λ Event Lookup"]
     APIGW --> L7["λ Statistics"]
 
-    L1 & L2 & L3 & L4 & L5 & L6 & L7 --> DDB[("🗄️ Amazon DynamoDB<br/>Single Table Design<br/>On-Demand Capacity")]
+    L1 & L2 & L3 & L4 & L5 & L6 & L7 --> DDB[("🗄️ Amazon DynamoDB\nSingle Table Design\nOn-Demand Capacity")]
 
-    DDB -.-> GSI1["GSI1<br/>User → Queue Lookup"]
-    DDB -.-> GSI2["GSI2<br/>Token Validation"]
-    DDB -.-> GSI3["GSI3<br/>Admin Queue View"]
+    DDB -.-> GSI1["GSI1\nUser → Queue Lookup"]
+    DDB -.-> GSI2["GSI2\nToken Validation"]
+    DDB -.-> GSI3["GSI3\nAdmin Queue View"]
     DDB --> Streams["DynamoDB Streams"]
 
-    L1 & L2 & L3 & L4 & L5 & L6 & L7 --> CW["📈 Amazon CloudWatch<br/>Logs · Metrics · Alarms"]
+    L1 & L2 & L3 & L4 & L5 & L6 & L7 --> CW["📈 Amazon CloudWatch\nLogs · Metrics · Alarms"]
 
     style DDB fill:#4053D6,color:#fff
     style APIGW fill:#FF9900,color:#fff
     style CW fill:#759C3E,color:#fff
+    style L4 fill:#c0392b,color:#fff
 ```
 
-Every Lambda function is single-purpose, stateless, and shares one common library (`src/common/`) for logging, DynamoDB access, response formatting, and models — so the same conventions apply everywhere.
+Every Lambda function is single-purpose and stateless. The `src/common/` module is shared across all functions for logging, DynamoDB access, response formatting, and data models.
 
 ### The queue lifecycle
 
@@ -109,13 +129,13 @@ stateDiagram-v2
     CANCELLED --> [*]
 ```
 
-> 💡 **Design decision:** queue positions are assigned once and never rewritten. Instead of shuffling everyone forward when a user cancels, only `status` changes — this keeps write volume flat even at millions of queue entries. See [`docs/05-table-schema.md`](docs/05-table-schema.md) for the full reasoning.
+> 💡 Queue positions are assigned once and never rewritten. Only `status` changes — this keeps write volume flat even at millions of queue entries. See [`docs/05-table-schema.md`](docs/05-table-schema.md) for the full reasoning.
 
 ---
 
 ## 🗃️ Data Model
 
-The entire application lives in **one DynamoDB table** (`FootballWaitingRoom`), storing six logical entity types differentiated by key prefixes — the classic Single Table Design pattern.
+The entire application lives in **one DynamoDB table** (`FootballWaitingRoom`), storing six logical entity types differentiated by key prefixes — Single Table Design.
 
 <details>
 <summary><b>Show entity key schema</b></summary>
@@ -131,53 +151,33 @@ The entire application lives in **one DynamoDB table** (`FootballWaitingRoom`), 
 
 </details>
 
-<details>
-<summary><b>Show example items</b></summary>
-
-```json
-// Event
-{ "PK": "EVENT#1001", "SK": "METADATA", "entityType": "EVENT",
-  "matchName": "Manchester United vs Liverpool", "capacity": 50000, "status": "OPEN" }
-
-// Queue Entry
-{ "PK": "EVENT#1001", "SK": "QUEUE#00000123", "entityType": "QUEUE",
-  "userId": "501", "queuePosition": 123, "status": "WAITING",
-  "joinTime": "2026-07-08T12:00:00Z" }
-
-// Admission Token (TTL-managed)
-{ "PK": "TOKEN#ABC123", "SK": "METADATA", "entityType": "TOKEN",
-  "userId": "501", "status": "ACTIVE", "expiresAt": 1783525200, "ttl": 1783525200 }
-```
-
-</details>
-
-### Global Secondary Indexes — kept deliberately minimal
-
-Every extra GSI adds write cost and storage overhead, so each one here exists to satisfy a *specific, real* access pattern — not "just in case."
+### Global Secondary Indexes
 
 | Index | Key | Serves |
 |---|---|---|
 | **GSI1** | `USER#<id>` → `EVENT#<id>` | "What's my queue status?" / resume session |
 | **GSI2** | `TOKEN#<id>` | Fast admission-token validation before checkout |
-| **GSI3** *(optional)* | `EVENT#<id>` → `STATUS#<state>` | Admin dashboards & monitoring (not customer-facing) |
+| **GSI3** | `EVENT#<id>` → `STATUS#<state>` | Admin dashboards, ordered admission batches |
 
-Full rationale in [`docs/06-index-design.md`](docs/06-index-design.md). Access-pattern derivation in [`docs/03-access-patterns.md`](docs/03-access-patterns.md).
+Full rationale in [`docs/06-index-design.md`](docs/06-index-design.md).
 
 ---
 
 ## 🔌 API Reference
 
-Base URL: `https://api.example.com/v1`
+Base URL: `https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod`
 
-| Method | Endpoint | Description | DynamoDB Op |
+| Method | Endpoint | Description | Auth |
 |---|---|---|---|
-| `POST` | `/queue/join` | Join the waiting room for an event | Conditional `PutItem` |
-| `GET` | `/queue/status` | Get live position & estimated wait | `Query` (GSI1) |
-| `POST` | `/queue/leave` | Voluntarily leave the queue | `UpdateItem` |
-| `POST` | `/queue/admit` | *(Admin)* Admit the next batch of users | `Query` + batched `UpdateItem` |
-| `POST` | `/token/validate` | Validate an admission token before checkout | `GetItem` (GSI2) |
-| `GET` | `/event/{eventId}` | Fetch match metadata | `GetItem` |
-| `GET` | `/event/{eventId}/stats` | Real-time queue statistics | `GetItem` |
+| `POST` | `/queue/join` | Join the waiting room for an event | — |
+| `GET` | `/queue/status` | Get live position & estimated wait | — |
+| `POST` | `/queue/leave` | Voluntarily leave the queue | — |
+| `POST` | `/queue/admit` | *(Admin)* Admit the next batch | `x-admin-api-key` header |
+| `POST` | `/token/validate` | Validate an admission token before checkout | — |
+| `GET` | `/event/{eventId}` | Fetch match metadata | — |
+| `GET` | `/event/{eventId}/stats` | Real-time queue statistics | — |
+
+> 🔐 `POST /queue/admit` requires the `x-admin-api-key` header. Requests without it return `403 Forbidden`. The key is set at deploy time via the `AdminApiKey` SAM parameter.
 
 <details>
 <summary><b>Example — join the queue</b></summary>
@@ -186,40 +186,61 @@ Base URL: `https://api.example.com/v1`
 POST /queue/join
 Content-Type: application/json
 
-{ "eventId": "1001", "userId": "501" }
+{ "eventId": "1001", "userId": "FAN-001" }
 ```
 
 ```json
 HTTP 201 Created
 {
   "message": "Successfully joined queue.",
-  "queuePosition": 123,
+  "queuePosition": "01783512345678-a1b2c3d4",
   "status": "WAITING",
-  "estimatedWaitMinutes": 18
+  "estimatedWaitMinutes": 12
 }
 ```
 
 </details>
 
 <details>
-<summary><b>Example — validate an admission token</b></summary>
+<summary><b>Example — admit a batch (admin)</b></summary>
 
 ```http
-POST /token/validate
+POST /queue/admit
 Content-Type: application/json
+x-admin-api-key: your-admin-key
 
-{ "token": "ABC123XYZ" }
+{ "eventId": "1001", "batchSize": 50 }
 ```
 
 ```json
 HTTP 200 OK
-{ "valid": true, "eventId": "1001", "userId": "501", "expiresAt": "2026-07-08T13:45:00Z" }
+{
+  "admittedUsers": 50,
+  "remainingQueue": 18235,
+  "admittedUserIds": ["FAN-001", "FAN-002", "..."]
+}
 ```
 
 </details>
 
-Full endpoint contracts, validation rules, rate-limit recommendations, and error schemas: [`docs/08-api-design.md`](docs/08-api-design.md).
-A ready-to-import request collection lives in [`postman/`](postman/).
+Full endpoint contracts, validation rules, and error schemas: [`docs/08-api-design.md`](docs/08-api-design.md).
+
+---
+
+## 🔐 Security
+
+| Measure | Detail |
+|---|---|
+| Admin endpoint protection | `POST /queue/admit` requires `x-admin-api-key` header — verified server-side with `hmac.compare_digest` |
+| Input validation | All endpoints validate required fields and reject inputs exceeding length limits |
+| Batch size cap | `/queue/admit` caps `batchSize` at 500 to limit per-call DynamoDB write cost |
+| IAM least privilege | Read-only Lambdas: `DynamoDBReadPolicy`. Write Lambdas: `DynamoDBCrudPolicy` |
+| Throttling | API Gateway stage throttling: 200 req/s rate, 500 burst |
+| Encryption | DynamoDB SSE enabled; all traffic over HTTPS |
+| Token expiration | Admission tokens enforced at runtime (status + epoch check) |
+| Admin key management | Set via `AdminApiKey` SAM parameter (`NoEcho: true`) — never in source code |
+
+> For a production deployment, move `AdminApiKey` to AWS Secrets Manager and add a Lambda Authorizer or Cognito for user identity. See [`docs/13-deployment-guide.md`](docs/13-deployment-guide.md#production-considerations).
 
 ---
 
@@ -227,16 +248,15 @@ A ready-to-import request collection lives in [`postman/`](postman/).
 
 | Layer | Services / Tools |
 |---|---|
-| **Compute** | AWS Lambda (Python 3.12) |
-| **Data** | Amazon DynamoDB (Single Table, On-Demand, Streams, TTL) |
-| **API** | Amazon API Gateway (REST) |
+| **Compute** | AWS Lambda (Python 3.14) |
+| **Data** | Amazon DynamoDB (Single Table, On-Demand, Streams, TTL, PITR, SSE) |
+| **API** | Amazon API Gateway (REST, throttling, usage plans) |
+| **Frontend** | Static HTML/CSS/JS SPA — glassmorphism dark theme |
 | **Observability** | Amazon CloudWatch, structured JSON logging (AWS Lambda Powertools) |
-| **Security** | AWS IAM (least privilege) |
+| **Security** | AWS IAM (least privilege), API key auth, input validation |
 | **Infrastructure as Code** | AWS SAM / CloudFormation |
-| **App dependencies** | `boto3`, `aws-lambda-powertools`, `pydantic` |
+| **Load testing** | `scripts/mass_ticket_requests.py` (asyncio + aiohttp) |
 | **Dev & QA** | `pytest`, `moto`, `black`, `flake8`, `mypy`, `isort`, `pre-commit` |
-| **Load testing** | k6 / Artillery / Locust |
-| **CI/CD** | GitHub Actions |
 
 ---
 
@@ -245,26 +265,30 @@ A ready-to-import request collection lives in [`postman/`](postman/).
 ```
 football-virtual-waiting-room/
 ├── .github/workflows/      # CI pipeline (test + sam validate)
-├── docs/                   # 15-part design & engineering log (see below)
-├── diagrams/               # Detailed architecture diagrams
+├── docs/                   # 13-part design & engineering log
+├── diagrams/               # Architecture diagrams
+├── frontend/               # Static SPA (index.html, styles.css, app.js)
 ├── src/
-│   ├── common/              # Shared: dynamodb, models, responses, logger, utils
+│   ├── common/             # Shared: dynamodb, models, responses, logger, utils, constants
 │   ├── join_queue/
 │   ├── queue_status/
 │   ├── leave_queue/
-│   ├── admit_users/
+│   ├── admit_users/        # 🔐 Admin-protected endpoint
 │   ├── validate_token/
 │   ├── event_lookup/
-│   └── statistics/          # One Lambda handler per folder
+│   └── statistics/
 ├── tests/
 │   ├── unit/
 │   ├── integration/
 │   ├── api/
 │   └── load/
-├── events/                  # Sample Lambda test events (SAM local)
-├── scripts/                 # seed_data.py, generate_test_data.py
-├── postman/                  # API collection + environment
-├── template.yaml             # AWS SAM infrastructure definition
+├── events/                 # Sample Lambda test events (SAM local)
+├── scripts/
+│   ├── seed_data.py
+│   ├── generate_test_data.py
+│   └── mass_ticket_requests.py   # 1M-request async load test
+├── postman/                # API collection + environment
+├── template.yaml           # AWS SAM infrastructure definition
 └── samconfig.toml
 ```
 
@@ -283,10 +307,10 @@ football-virtual-waiting-room/
 ```bash
 git clone https://github.com/Afffan16/football-virtual-waiting-room.git
 cd football-virtual-waiting-room
-pip install -r requirements-dev.txt   # installs app + dev dependencies
+pip install -r requirements-dev.txt
 ```
 
-### 2. Run it locally
+### 2. Run locally
 
 ```bash
 sam build
@@ -296,47 +320,67 @@ sam local start-api
 ### 3. Deploy to AWS
 
 ```bash
+# First deploy — guided setup
 sam deploy --guided
+
+# You will be prompted for AdminApiKey — generate a strong one:
+# openssl rand -hex 32
 ```
 
-This provisions the `FootballWaitingRoom` DynamoDB table (with GSI1–GSI3, Streams, and TTL), all seven Lambda functions, and the API Gateway REST API — entirely via CloudFormation.
-
-### 4. Seed some data (optional)
+### 4. Seed the database
 
 ```bash
 python scripts/seed_data.py
-python scripts/generate_test_data.py
 ```
 
-> All of the above are also available as `make` targets — see the [Makefile](Makefile) (`make install`, `make build`, `make deploy`, `make local`, `make test`).
+### 5. Open the frontend
+
+Edit `frontend/app.js` — set `API_BASE` to your deployed API URL and `ADMIN_API_KEY` to your admin key. Then open `frontend/index.html` in a browser.
+
+---
+
+## 🚢 Deployment
+
+Full step-by-step guide including S3 + CloudFront frontend deployment, environment configuration, and production considerations: **[`docs/13-deployment-guide.md`](docs/13-deployment-guide.md)**
+
+Quick reference:
+
+```bash
+sam build
+sam deploy --parameter-overrides AdminApiKey="$(openssl rand -hex 32)"
+```
 
 ---
 
 ## 🧪 Testing
 
+Full testing guide (unit, integration, API contract, load, manual cURL, SAM Local, security checklist): **[`docs/12-testing-guide.md`](docs/12-testing-guide.md)**
+
+Quick reference:
+
 ```bash
-pytest                 # full suite
-pytest --cov=src       # with coverage
-make lint               # flake8
-make format             # black
+pytest                        # full suite
+pytest --cov=src              # with coverage
+pytest tests/unit/            # unit tests only
+pytest tests/integration/     # integration tests only
+make lint                     # flake8
+make format                   # black
 ```
 
-The suite spans four layers, from isolated Lambda logic up to simulated production load:
+### Load testing
 
-| Layer | What it covers |
-|---|---|
-| **Unit** (`tests/unit`) | Lambda handler logic, response formatting, models, validation |
-| **Integration** (`tests/integration`) | End-to-end flow through API Gateway → Lambda → DynamoDB, per endpoint |
-| **API** (`tests/api`) | Contract testing against the documented request/response schemas |
-| **Load** (`tests/load`) | Concurrent-user and burst-traffic simulation |
+```bash
+pip install aiohttp
+python scripts/mass_ticket_requests.py --total 1000 --concurrency 20 --event 1001
+```
 
-Performance targets (validated under load): API responses **< 200 ms**, token validation **< 100 ms**, error rate **< 1%**. Full plan: [`docs/11-testing-plan.md`](docs/11-testing-plan.md) · Load test design: [`docs/12-load-testing.md`](docs/12-load-testing.md).
+Performance targets (validated under load): API p99 < 500 ms · error rate < 1% · throughput > 500 req/s sustained.
 
 ---
 
 ## 💰 Why serverless, cost-wise
 
-DynamoDB runs in **On-Demand** mode — no capacity planning, scales automatically for a ticket-drop spike, and costs nothing when idle. TTL removes expired sessions and tokens without a single cron job. Combined with Lambda's pay-per-invocation model, the whole stack has **zero always-on cost** between events.
+DynamoDB runs in **On-Demand** mode — no capacity planning, auto-scales for a ticket-drop spike, costs nothing when idle. TTL removes expired tokens without cron jobs. Lambda is pay-per-invocation.
 
 | Architecture | Relative Cost | Ops Overhead |
 |---|---|---|
@@ -344,13 +388,11 @@ DynamoDB runs in **On-Demand** mode — no capacity planning, scales automatical
 | Containers | Medium | Medium |
 | **This solution (serverless)** | **Low–Medium** | **Low** |
 
-Full breakdown, sample workload assumptions, and optimization techniques: [`docs/13-cost-estimation.md`](docs/13-cost-estimation.md).
+Full breakdown: [`docs/10-cost-estimation.md`](docs/10-cost-estimation.md).
 
 ---
 
 ## 📚 Full Documentation
-
-Every design decision in this project — not just the code — is documented. This was written as an engineering log for the AWS Builder Center challenge, so it doubles as a walkthrough of *how* to reason through a DynamoDB data model from scratch.
 
 | # | Document | What's inside |
 |---|---|---|
@@ -362,16 +404,12 @@ Every design decision in this project — not just the code — is documented. T
 | 05 | [Table Schema](docs/05-table-schema.md) | Physical PK/SK design |
 | 06 | [Index Design](docs/06-index-design.md) | GSI1–GSI3 rationale |
 | 07 | [System Architecture](docs/07-system-architecture.md) | Full AWS architecture |
-| 08 | [API Design](docs/08-api-design.md) | REST contract, errors, rate limits |
-| 09 | [Implementation Plan](docs/09-implementation-plan.md) | Build order & milestones |
-| 10 | [Step-by-Step Build](docs/10-step-by-step-build.md) | How it was actually built |
-| 11 | [Testing Plan](docs/11-testing-plan.md) | Test strategy & acceptance criteria |
-| 12 | [Load Testing](docs/12-load-testing.md) | Traffic simulation design |
-| 13 | [Cost Estimation](docs/13-cost-estimation.md) | Pricing model & optimization |
-| 14 | [Optimization](docs/14-optimization.md) | Performance tuning notes |
-| 15 | [Final Solution](docs/15-final-solution.md) | Executive summary |
-
-Extra detailed diagrams (component-level, sequence flows): [`diagrams/architecture-diagrams.md`](diagrams/architecture-diagrams.md).
+| 08 | [API Design](docs/08-api-design.md) | REST contract, errors, rate limits, security |
+| 09 | [Build Guide](docs/09-build-guide.md) | Plan, build retrospective, Phase 6 detail |
+| 10 | [Cost Estimation](docs/10-cost-estimation.md) | Pricing model & optimization |
+| 11 | [Optimization](docs/11-optimization.md) | Performance tuning notes |
+| **12** | **[Testing Guide](docs/12-testing-guide.md)** | **Complete how-to testing reference** |
+| **13** | **[Deployment Guide](docs/13-deployment-guide.md)** | **End-to-end deployment + S3/CloudFront** |
 
 ---
 
@@ -380,19 +418,24 @@ Extra detailed diagrams (component-level, sequence flows): [`diagrams/architectu
 - [ ] Push-based queue updates via WebSocket / SSE (replace polling)
 - [ ] Multi-region deployment with DynamoDB Global Tables
 - [ ] Write sharding for extreme-scale events (`EVENT#id#SHARD#n`)
+- [ ] Lambda Authorizer / Cognito for verified user identity
+- [ ] Move admin key to AWS Secrets Manager
 - [ ] Redis/ElastiCache layer for hot read paths
-- [ ] CI/CD pipeline with automated deployment gates
 - [ ] Real-time analytics dashboard
 
 ---
 
 ## 🤝 Contributing
 
-Contributions are welcome — fork, branch, write tests, and open a PR. Coding standards, workflow, and infrastructure rules are in [`CONTRIBUTING.MD`](CONTRIBUTING.MD).
+Fork, branch, write tests, and open a PR. See [`CONTRIBUTING.MD`](CONTRIBUTING.MD) for coding standards and the PR checklist.
+
+## 📋 Challenge Deliverables
+
+Full breakdown of every challenge requirement and how it was met: **[`DELIVERABLES.md`](DELIVERABLES.md)**
 
 ## 📄 License
 
-Released under the [MIT License](LICENSE) — provided for educational and demonstration purposes.
+Released under the [MIT License](LICENSE).
 
 ---
 

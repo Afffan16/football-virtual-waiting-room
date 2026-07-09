@@ -15,6 +15,8 @@ Globals:
       Variables:
         TABLE_NAME: !Ref FootballWaitingRoomTable
         LOG_LEVEL: INFO
+        # Security — injected at deploy time; never hardcoded here
+        ADMIN_API_KEY: !Ref AdminApiKey
     LoggingConfig:
       LogFormat: JSON
 
@@ -35,6 +37,21 @@ Parameters:
     Type: Number
     Default: 50
     Description: Default admission batch size
+  PurchasingCapacity:
+    Type: Number
+    Default: 1000
+    Description: >
+      Maximum number of fans in the ADMITTED (active purchasing) state at once.
+      The admit endpoint in capacity-aware mode (capacityMode=true) will only
+      admit enough fans to fill up to this limit.
+  AdminApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: >
+      API key value for the admin (x-admin-api-key header). Leave blank to
+      auto-generate a placeholder. Set via --parameter-overrides at deploy time.
+      Store the real value in AWS Secrets Manager in production.
 
 Resources:
   # ==========================================================================
@@ -143,6 +160,47 @@ Resources:
         AllowMethods: "'GET,POST,OPTIONS'"
         AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Idempotency-Key'"
         AllowOrigin: "'*'"
+      # Throttle per-stage to protect against abuse
+      MethodSettings:
+        - ResourcePath: "/*"
+          HttpMethod: "*"
+          ThrottlingBurstLimit: 500
+          ThrottlingRateLimit: 200
+
+  # --------------------------------------------------------------------------
+  # API Key + Usage Plan — controls who can call POST /queue/admit (admin ops)
+  # and provides a general rate-limiting tier for all callers.
+  # --------------------------------------------------------------------------
+  WaitingRoomApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: WaitingRoomApi
+    Properties:
+      Name: !Sub "FootballWaitingRoom-${StageName}-Key"
+      Description: API key for Football Virtual Waiting Room — admin and rate-limiting tier
+      Enabled: true
+
+  WaitingRoomUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: WaitingRoomApi
+    Properties:
+      UsagePlanName: !Sub "FootballWaitingRoom-${StageName}-Plan"
+      Description: Throttling and quota plan for the waiting-room API
+      ApiStages:
+        - ApiId: !Ref WaitingRoomApi
+          Stage: !Ref StageName
+      Throttle:
+        BurstLimit: 500
+        RateLimit: 200
+      Quota:
+        Limit: 1000000
+        Period: DAY
+
+  WaitingRoomUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref WaitingRoomApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref WaitingRoomUsagePlan
 
 
   # ==========================================================================
@@ -219,6 +277,7 @@ Resources:
         Variables:
           DEFAULT_BATCH_SIZE: !Ref DefaultBatchSize
           TOKEN_TTL_MINUTES: !Ref TokenTTLMinutes
+          PURCHASING_CAPACITY: !Ref PurchasingCapacity
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref FootballWaitingRoomTable
@@ -303,6 +362,10 @@ Outputs:
   FootballWaitingRoomStreamArn:
     Description: DynamoDB Streams ARN
     Value: !GetAtt FootballWaitingRoomTable.StreamArn
+
+  WaitingRoomApiKeyId:
+    Description: API Gateway API Key ID (retrieve value from console or CLI — never printed in plain text)
+    Value: !Ref WaitingRoomApiKey
 
   JoinQueueFunctionArn:
     Description: Join Queue Lambda ARN

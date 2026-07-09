@@ -43,6 +43,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         event_id: str = body["eventId"]
         user_id: str = body["userId"]
 
+        # ----- Sanitize input lengths -----
+        if len(event_id) > 64 or len(user_id) > 128:
+            return bad_request("eventId or userId exceeds maximum allowed length.")
+
         logger.append_keys(eventId=event_id, userId=user_id)
         logger.info("Processing leave queue request")
 

@@ -1,8 +1,8 @@
 # 💰 Cost Estimation & Operational Efficiency
 
-**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/13-cost-estimation.md`
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/10-cost-estimation.md`
 
-← [Back: Load Testing](12-load-testing.md) · Next: [Optimization →](14-optimization.md)
+← [Back: Build Guide](09-build-guide.md) · Next: [Optimization →](11-optimization.md)
 
 ---
 
@@ -190,4 +190,4 @@ The architecture ties cost directly to actual usage through a fully managed, ser
 
 Together, these let the system absorb an unpredictable, spiky workload like a football ticket launch without paying for capacity it isn't using the rest of the time.
 
-Next: [`14-optimization.md`](14-optimization.md) covers where these design decisions were tested against real load and refined further.
+Next: [`11-optimization.md`](11-optimization.md) covers where these design decisions were tested against real load and refined further.

@@ -186,7 +186,7 @@ stateDiagram-v2
 
 Queue positions are assigned once, at join time, and **never modified**. Rather than shifting every user forward when someone ahead of them leaves, only the `status` field changes as a user progresses through admission.
 
-This one decision is what keeps write volume flat even as the queue churns at scale — see the cost impact discussion in [`13-cost-estimation.md`](13-cost-estimation.md).
+This one decision is what keeps write volume flat even as the queue churns at scale — see the cost impact discussion in [`10-cost-estimation.md`](10-cost-estimation.md).
 
 ---
 

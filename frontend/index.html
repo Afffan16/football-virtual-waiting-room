@@ -3,306 +3,335 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Football Virtual Waiting Room</title>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
-    <style>
-        :root {
-            --primary: #4053D6;
-            --primary-hover: #5B6DE0;
-            --accent: #FF9900;
-            --bg-dark: #0f172a;
-            --glass-bg: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-        }
-
-        body {
-            margin: 0;
-            padding: 0;
-            font-family: 'Outfit', sans-serif;
-            background: radial-gradient(circle at top left, #1e1b4b, var(--bg-dark));
-            color: var(--text-main);
-            min-height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .container {
-            width: 90%;
-            max-width: 1000px;
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2rem;
-            padding: 2rem;
-        }
-
-        .glass-panel {
-            background: var(--glass-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid var(--glass-border);
-            border-radius: 24px;
-            padding: 2rem;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-        }
-
-        .glass-panel:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.6);
-        }
-
-        h1 {
-            font-size: 2.5rem;
-            font-weight: 800;
-            margin-top: 0;
-            margin-bottom: 0.5rem;
-            background: linear-gradient(135deg, #fff, #94a3b8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-        }
-
-        p.subtitle {
-            color: var(--text-muted);
-            margin-bottom: 2rem;
-            font-size: 1.1rem;
-        }
-
-        .input-group {
-            margin-bottom: 1.5rem;
-        }
-
-        .input-group label {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-
-        input {
-            width: 100%;
-            padding: 1rem;
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            color: white;
-            font-family: 'Outfit', sans-serif;
-            font-size: 1rem;
-            box-sizing: border-box;
-            transition: border-color 0.3s ease;
-        }
-
-        input:focus {
-            outline: none;
-            border-color: var(--primary);
-        }
-
-        .button-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
-        button {
-            padding: 1rem;
-            border: none;
-            border-radius: 12px;
-            font-family: 'Outfit', sans-serif;
-            font-weight: 600;
-            font-size: 1rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        button::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 0;
-            height: 0;
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            transition: width 0.4s ease, height 0.4s ease;
-        }
-
-        button:active::after {
-            width: 200px;
-            height: 200px;
-        }
-
-        .btn-primary {
-            background: var(--primary);
-            color: white;
-        }
-        .btn-primary:hover { background: var(--primary-hover); }
-
-        .btn-secondary {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-        }
-        .btn-secondary:hover { background: rgba(255, 255, 255, 0.2); }
-
-        .btn-accent {
-            background: var(--accent);
-            color: #000;
-            grid-column: span 2;
-        }
-        .btn-accent:hover { background: #e68a00; }
-
-        .log-panel {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .log-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 1rem;
-        }
-
-        .log-header h2 {
-            margin: 0;
-            font-size: 1.2rem;
-            color: var(--text-muted);
-        }
-
-        #log-output {
-            flex-grow: 1;
-            background: rgba(0, 0, 0, 0.4);
-            border-radius: 12px;
-            padding: 1rem;
-            font-family: monospace;
-            font-size: 0.9rem;
-            color: #10b981;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            border: 1px solid var(--glass-border);
-            min-height: 400px;
-        }
-        
-        .loading {
-            opacity: 0.5;
-            pointer-events: none;
-        }
-
-        @media (max-width: 768px) {
-            .container {
-                grid-template-columns: 1fr;
-            }
-        }
-    </style>
+    <title>Football Virtual Waiting Room — Ticket Queue Management</title>
+    <meta name="description" content="A serverless, DynamoDB-powered virtual waiting room for high-demand football ticket drops. Join the queue, track your position, and get admitted fairly.">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
-<div class="container">
-    <div class="glass-panel">
-        <h1>Waiting Room</h1>
-        <p class="subtitle">Experience extreme-scale DynamoDB.</p>
+<!-- ========== PARTICLE CANVAS BACKGROUND ========== -->
+<canvas id="particle-canvas"></canvas>
 
-        <div class="input-group">
-            <label>Event ID</label>
-            <input type="text" id="eventId" value="1001" placeholder="e.g. 1001">
-        </div>
-        <div class="input-group">
-            <label>User ID</label>
-            <input type="text" id="userId" value="FAN-001" placeholder="e.g. FAN-001">
+<!-- ========== NAVIGATION BAR ========== -->
+<nav class="navbar" id="navbar">
+    <div class="nav-brand" onclick="navigate('home')">
+        <span class="nav-logo">⚽</span>
+        <span class="nav-title">Virtual Waiting Room</span>
+    </div>
+    <div class="nav-links" id="nav-links"></div>
+</nav>
+
+<!-- ========== PAGE: HOME ========== -->
+<section class="page active" id="page-home">
+    <div class="home-container">
+        <div class="hero-badge">AWS DynamoDB Challenge</div>
+        <h1 class="hero-title">
+            <span class="hero-line">Football</span>
+            <span class="hero-line gradient-text">Virtual Waiting Room</span>
+        </h1>
+        <p class="hero-subtitle">
+            A serverless queue system built to handle millions of concurrent fans
+            during high-demand ticket drops. Choose your role below.
+        </p>
+
+        <div class="role-cards">
+            <!-- Admin Card -->
+            <div class="role-card admin-card" onclick="navigate('admin')" id="btn-admin-role">
+                <div class="role-icon-wrap">
+                    <div class="role-icon">🛡️</div>
+                    <div class="role-icon-glow admin-glow"></div>
+                </div>
+                <h2 class="role-title">Admin</h2>
+                <p class="role-desc">
+                    Monitor incoming queue requests, admit users in batches, 
+                    and manage approval/cancellation status across all events.
+                </p>
+                <div class="role-tag">Dashboard &amp; Controls</div>
+                <div class="role-arrow">→</div>
+            </div>
+
+            <!-- User Card -->
+            <div class="role-card user-card" onclick="navigate('events')" id="btn-user-role">
+                <div class="role-icon-wrap">
+                    <div class="role-icon">🎟️</div>
+                    <div class="role-icon-glow user-glow"></div>
+                </div>
+                <h2 class="role-title">User</h2>
+                <p class="role-desc">
+                    Browse upcoming football events, join the ticket queue,
+                    track your position, and manage your reservations.
+                </p>
+                <div class="role-tag">Events &amp; Tickets</div>
+                <div class="role-arrow">→</div>
+            </div>
         </div>
 
-        <div class="button-grid">
-            <button class="btn-primary" onclick="joinQueue()">Join Queue</button>
-            <button class="btn-secondary" onclick="checkStatus()">Check Status</button>
-            <button class="btn-secondary" onclick="getStats()">View Queue Stats</button>
-            <button class="btn-secondary" onclick="leaveQueue()">Leave Queue</button>
-            <button class="btn-accent" onclick="adminAdmitUsers()">Admin: Admit Batch (10 users)</button>
+        <div class="home-stats-bar">
+            <div class="home-stat">
+                <span class="home-stat-value" id="home-stat-events">—</span>
+                <span class="home-stat-label">Live Events</span>
+            </div>
+            <div class="home-stat-divider"></div>
+            <div class="home-stat">
+                <span class="home-stat-value" id="home-stat-queue">—</span>
+                <span class="home-stat-label">In Queue</span>
+            </div>
+            <div class="home-stat-divider"></div>
+            <div class="home-stat">
+                <span class="home-stat-value" id="home-stat-admitted">—</span>
+                <span class="home-stat-label">Admitted</span>
+            </div>
         </div>
     </div>
+</section>
 
-    <div class="glass-panel log-panel">
-        <div class="log-header">
-            <h2>Live API Monitor</h2>
-            <button class="btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.8rem;" onclick="clearLog()">Clear</button>
+<!-- ========== PAGE: ADMIN DASHBOARD ========== -->
+<section class="page" id="page-admin">
+    <div class="dashboard-container">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Admin Dashboard</h1>
+                <p class="page-subtitle">Queue management and request monitoring</p>
+            </div>
+            <div class="header-actions">
+                <button class="btn btn-outline" onclick="refreshAdminData()" id="btn-admin-refresh">
+                    <span class="btn-icon">↻</span> Refresh
+                </button>
+            </div>
         </div>
-        <div id="log-output">System initialized. Ready for API requests.
-Using endpoint: https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod</div>
+
+        <!-- Admin: Event Selector + Admit Controls -->
+        <div class="admin-controls-row">
+            <div class="glass-card admin-event-selector">
+                <label class="input-label" for="admin-event-select">Select Event</label>
+                <select class="input-select" id="admin-event-select" onchange="onAdminEventChange()">
+                    <!-- populated dynamically -->
+                </select>
+            </div>
+            <div class="glass-card admin-batch-control">
+                <label class="input-label" for="admin-batch-size">Batch Size</label>
+                <div class="batch-row">
+                    <input type="number" class="input-field batch-input" id="admin-batch-size" value="10" min="1" max="500">
+                    <button class="btn btn-accent" onclick="adminAdmitBatch()" id="btn-admin-admit">
+                        ✅ Admit Batch
+                    </button>
+                    <button class="btn btn-secondary" onclick="adminAdmitCapacity()" id="btn-admin-capacity" title="Auto-fill to 1,000 active purchasers">
+                        ⚡ Auto-Fill
+                    </button>
+                </div>
+            </div>
+            <div class="glass-card admin-stats-mini">
+                <div class="mini-stat">
+                    <span class="mini-stat-val" id="admin-stat-waiting">—</span>
+                    <span class="mini-stat-label">Waiting</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-val admitted" id="admin-stat-admitted">—</span>
+                    <span class="mini-stat-label">Admitted</span>
+                </div>
+                <div class="mini-stat">
+                    <span class="mini-stat-val cancelled" id="admin-stat-cancelled">—</span>
+                    <span class="mini-stat-label">Cancelled</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin: Request Table -->
+        <div class="glass-card table-card">
+            <div class="table-header">
+                <h2 class="table-title">Incoming Queue Requests</h2>
+                <div class="table-filters">
+                    <button class="filter-chip active" data-filter="ALL" onclick="filterAdminTable('ALL', this)" id="filter-all">All</button>
+                    <button class="filter-chip" data-filter="WAITING" onclick="filterAdminTable('WAITING', this)" id="filter-waiting">Waiting</button>
+                    <button class="filter-chip" data-filter="ADMITTED" onclick="filterAdminTable('ADMITTED', this)" id="filter-admitted">Admitted</button>
+                    <button class="filter-chip" data-filter="CANCELLED" onclick="filterAdminTable('CANCELLED', this)" id="filter-cancelled">Cancelled</button>
+                    <button class="filter-chip" data-filter="EXPIRED" onclick="filterAdminTable('EXPIRED', this)" id="filter-expired">Expired</button>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table class="data-table" id="admin-requests-table">
+                    <thead>
+                        <tr>
+                            <th>Position</th>
+                            <th>User ID</th>
+                            <th>Status</th>
+                            <th>Join Time</th>
+                            <th>Est. Wait</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-table-body">
+                        <tr><td colspan="5" class="table-empty">Select an event to load queue data</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="table-footer" id="admin-table-footer">
+                <span id="admin-table-count">0 entries</span>
+            </div>
+        </div>
+
+        <!-- Admin: Activity Log -->
+        <div class="glass-card log-card">
+            <div class="log-header-row">
+                <h2 class="table-title">Activity Log</h2>
+                <button class="btn btn-sm btn-outline" onclick="clearAdminLog()" id="btn-clear-log">Clear</button>
+            </div>
+            <div class="log-output" id="admin-log">System ready. Select an event to begin monitoring.</div>
+        </div>
     </div>
-</div>
+</section>
 
-<script>
-    const API_BASE = "https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod";
-    const logEl = document.getElementById("log-output");
+<!-- ========== PAGE: USER EVENTS LIST ========== -->
+<section class="page" id="page-events">
+    <div class="dashboard-container">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Football Events</h1>
+                <p class="page-subtitle">Browse upcoming matches and join the ticket queue</p>
+            </div>
+        </div>
 
-    function log(method, endpoint, response) {
-        const time = new Date().toLocaleTimeString();
-        const divider = "----------------------------------------\n";
-        const msg = `[${time}] ${method} ${endpoint}\n${JSON.stringify(response, null, 2)}\n${divider}`;
-        logEl.textContent = msg + logEl.textContent;
-    }
+        <!-- User ID Input -->
+        <div class="glass-card user-id-card">
+            <label class="input-label">Your Fan ID</label>
+            <div class="user-id-row">
+                <input type="text" class="input-field" id="global-user-id" value="FAN-001" placeholder="Enter your Fan ID (e.g. FAN-001)">
+                <div class="user-id-indicator">
+                    <span class="indicator-dot"></span>
+                    <span class="indicator-text">Active</span>
+                </div>
+            </div>
+        </div>
 
-    function clearLog() {
-        logEl.textContent = "Log cleared.";
-    }
+        <!-- Events Grid -->
+        <div class="events-grid" id="events-grid">
+            <!-- populated dynamically -->
+        </div>
+    </div>
+</section>
 
-    async function fetchApi(method, endpoint, body = null) {
-        const url = `${API_BASE}${endpoint}`;
-        const options = {
-            method,
-            headers: { 'Content-Type': 'application/json' }
-        };
-        if (body) options.body = JSON.stringify(body);
+<!-- ========== PAGE: EVENT DETAIL (User Actions) ========== -->
+<section class="page" id="page-event-detail">
+    <div class="dashboard-container">
+        <div class="page-header">
+            <div>
+                <button class="btn btn-ghost" onclick="navigate('events')" id="btn-back-events">← Back to Events</button>
+                <h1 class="page-title" id="detail-match-name">Match Name</h1>
+                <p class="page-subtitle" id="detail-match-info">Stadium — Capacity</p>
+            </div>
+        </div>
 
-        try {
-            const res = await fetch(url, options);
-            const data = await res.json();
-            log(method, endpoint, data);
-            return data;
-        } catch (err) {
-            log(method, endpoint, { error: err.message });
-        }
-    }
+        <div class="detail-grid">
+            <!-- Action Cards -->
+            <div class="detail-actions">
+                <!-- Apply for Ticket -->
+                <div class="glass-card action-card" id="action-apply">
+                    <div class="action-icon apply-icon">🎫</div>
+                    <h3 class="action-title">Apply for Ticket</h3>
+                    <p class="action-desc">Join the virtual waiting room queue for this event. You'll be assigned a position and notified when admitted.</p>
+                    <button class="btn btn-primary btn-full" onclick="userJoinQueue()" id="btn-join-queue">
+                        Join Queue
+                    </button>
+                </div>
 
-    function getValues() {
-        return {
-            eventId: document.getElementById('eventId').value || "1001",
-            userId: document.getElementById('userId').value || "FAN-001"
-        };
-    }
+                <!-- Check Status -->
+                <div class="glass-card action-card" id="action-status">
+                    <div class="action-icon status-icon">📊</div>
+                    <h3 class="action-title">Check Status</h3>
+                    <p class="action-desc">View your current queue position, status, and estimated wait time.</p>
+                    <button class="btn btn-secondary btn-full" onclick="userCheckStatus()" id="btn-check-status">
+                        Check My Status
+                    </button>
+                </div>
 
-    async function joinQueue() {
-        const { eventId, userId } = getValues();
-        await fetchApi('POST', '/queue/join', { eventId, userId });
-    }
+                <!-- Cancel -->
+                <div class="glass-card action-card" id="action-cancel">
+                    <div class="action-icon cancel-icon">❌</div>
+                    <h3 class="action-title">Cancel Reservation</h3>
+                    <p class="action-desc">Voluntarily leave the queue and free up your position. This action cannot be undone.</p>
+                    <button class="btn btn-danger btn-full" onclick="userLeaveQueue()" id="btn-leave-queue">
+                        Leave Queue
+                    </button>
+                </div>
+            </div>
 
-    async function checkStatus() {
-        const { eventId, userId } = getValues();
-        await fetchApi('GET', `/queue/status?eventId=${eventId}&userId=${userId}`);
-    }
+            <!-- Status Result Panel -->
+            <div class="detail-status-panel">
+                <div class="glass-card status-result-card" id="status-result-card">
+                    <h3 class="status-result-title">Your Queue Status</h3>
+                    <div class="status-placeholder" id="status-placeholder">
+                        <div class="status-placeholder-icon">🔍</div>
+                        <p>Click "Check My Status" to see your position</p>
+                    </div>
+                    <div class="status-details" id="status-details">
+                        <div class="status-badge-wrap">
+                            <span class="status-badge large" id="status-badge">UNKNOWN</span>
+                        </div>
+                        <div class="status-grid">
+                            <div class="status-item">
+                                <span class="status-item-label">Queue Position</span>
+                                <span class="status-item-value" id="status-position">—</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-item-label">Event</span>
+                                <span class="status-item-value" id="status-event-id">—</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-item-label">Est. Wait</span>
+                                <span class="status-item-value" id="status-wait">—</span>
+                            </div>
+                            <div class="status-item">
+                                <span class="status-item-label">User ID</span>
+                                <span class="status-item-value" id="status-user-id">—</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-    async function leaveQueue() {
-        const { eventId, userId } = getValues();
-        await fetchApi('POST', '/queue/leave', { eventId, userId });
-    }
+                <!-- Event Stats -->
+                <div class="glass-card event-stats-card">
+                    <h3 class="status-result-title">Event Queue Stats</h3>
+                    <div class="event-stats-grid" id="event-stats-grid">
+                        <div class="evt-stat">
+                            <span class="evt-stat-val" id="evt-stat-waiting">—</span>
+                            <span class="evt-stat-label">Waiting</span>
+                        </div>
+                        <div class="evt-stat">
+                            <span class="evt-stat-val" id="evt-stat-admitted">—</span>
+                            <span class="evt-stat-label">Admitted</span>
+                        </div>
+                        <div class="evt-stat">
+                            <span class="evt-stat-val" id="evt-stat-cancelled">—</span>
+                            <span class="evt-stat-label">Cancelled</span>
+                        </div>
+                        <div class="evt-stat">
+                            <span class="evt-stat-val" id="evt-stat-total">—</span>
+                            <span class="evt-stat-label">Total</span>
+                        </div>
+                    </div>
+                    <button class="btn btn-outline btn-full btn-sm" onclick="loadEventStats()" id="btn-refresh-stats">
+                        ↻ Refresh Stats
+                    </button>
+                </div>
+            </div>
+        </div>
 
-    async function getStats() {
-        const { eventId } = getValues();
-        await fetchApi('GET', `/event/${eventId}/stats`);
-    }
+        <!-- Toast/Notification area -->
+        <div id="detail-log-area" class="glass-card log-card">
+            <div class="log-header-row">
+                <h2 class="table-title">Action Log</h2>
+                <button class="btn btn-sm btn-outline" onclick="clearDetailLog()" id="btn-clear-detail-log">Clear</button>
+            </div>
+            <div class="log-output" id="detail-log">Ready. Choose an action above.</div>
+        </div>
+    </div>
+</section>
 
-    async function adminAdmitUsers() {
-        const { eventId } = getValues();
-        await fetchApi('POST', '/queue/admit', { eventId, batchSize: 10 });
-    }
-</script>
+<!-- ========== TOAST NOTIFICATIONS ========== -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="app.js"></script>
 
 </body>
 </html>

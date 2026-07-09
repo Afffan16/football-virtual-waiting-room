@@ -5,12 +5,14 @@ Endpoint: POST /queue/admit
 
 This function:
   1. Validates the request body (eventId required, optional batchSize).
-  2. Queries GSI3 to find the next N users in WAITING status, ordered by queue position.
-  3. Loops through each user to:
+  2. Enforces admin-only access via the x-admin-api-key header checked
+     against the ADMIN_API_KEY environment variable.
+  3. Queries GSI3 to find the next N users in WAITING status, ordered by queue position.
+  4. Loops through each user to:
      a. Transition their status from WAITING to ADMITTED.
      b. Generate a temporary admission token with a TTL.
-  4. Updates the aggregate stats (waitingUsers decrement, admittedUsers increment).
-  5. Returns the number of admitted users and remaining queue size.
+  5. Updates the aggregate stats (waitingUsers decrement, admittedUsers increment).
+  6. Returns the number of admitted users and remaining queue size.
 """
 
 from __future__ import annotations
@@ -28,6 +30,7 @@ from common.constants import (
     METADATA_SK,
     QUEUE_PREFIX,
     QUEUE_POSITION_PAD_LENGTH,
+    PURCHASING_CAPACITY,
     STATS_SK,
     STATUS_ADMITTED,
     STATUS_WAITING,
@@ -43,7 +46,7 @@ from common.dynamodb import (
     update_item,
 )
 from common.logger import logger
-from common.responses import bad_request, internal_error, success
+from common.responses import bad_request, forbidden, internal_error, success
 from common.utils import (
     epoch_minutes_from_now,
     generate_token_id,
@@ -52,11 +55,45 @@ from common.utils import (
     validate_required_fields,
 )
 
+# ---------------------------------------------------------------------------
+# Admin API key — set via SAM parameter AdminApiKey, injected as env var.
+# An empty / missing key disables the check (dev/local mode only).
+# ---------------------------------------------------------------------------
+_ADMIN_API_KEY: str = os.environ.get("ADMIN_API_KEY", "")
+
+
+def _is_admin_authorized(event: dict[str, Any]) -> bool:
+    """Return True if the request carries a valid admin API key.
+
+    Checks the ``x-admin-api-key`` header (case-insensitive, as API Gateway
+    lowercases all header names).  If ADMIN_API_KEY is not configured the
+    check is skipped so local development / SAM local still works.
+    """
+    if not _ADMIN_API_KEY:
+        # Not configured — skip (log a warning so operators notice)
+        logger.warning("ADMIN_API_KEY is not set; admin auth check is disabled")
+        return True
+
+    headers: dict[str, str] = {
+        k.lower(): v
+        for k, v in (event.get("headers") or {}).items()
+    }
+    provided_key = headers.get("x-admin-api-key", "")
+
+    # Constant-time comparison to prevent timing attacks
+    import hmac
+    return hmac.compare_digest(provided_key, _ADMIN_API_KEY)
+
 
 @logger.inject_lambda_context(log_event=True)
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """API Gateway proxy handler for POST /queue/admit."""
     try:
+        # ----- Admin authorization -----
+        if not _is_admin_authorized(event):
+            logger.warning("Unauthorized admit attempt — missing or invalid admin key")
+            return forbidden("Admin authorization required.")
+
         # ----- Parse & validate -----
         body = parse_body(event)
         validation_error = validate_required_fields(body, ["eventId"])
@@ -65,6 +102,33 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
 
         event_id: str = body["eventId"]
         batch_size: int = int(body.get("batchSize", DEFAULT_BATCH_SIZE))
+
+        # ----- Stretch goal: capacity-aware auto-fill -----
+        # If the caller passes capacityMode=true (or omits batchSize), compute
+        # how many slots are available under PURCHASING_CAPACITY and only admit
+        # that many — preventing over-admission beyond purchasing capacity.
+        capacity_mode: bool = body.get("capacityMode", False)
+        purchasing_capacity: int = int(body.get("purchasingCapacity", PURCHASING_CAPACITY))
+
+        if capacity_mode:
+            stats_now = get_event_stats(event_id) or {}
+            currently_admitted: int = int(stats_now.get("admittedUsers", 0))
+            available_slots = max(0, purchasing_capacity - currently_admitted)
+            if available_slots == 0:
+                logger.info("Purchasing capacity is full — no slots available", extra={"capacity": purchasing_capacity, "admitted": currently_admitted})
+                return success({
+                    "admittedUsers": 0,
+                    "remainingQueue": int(stats_now.get("waitingUsers", 0)),
+                    "admittedUserIds": [],
+                    "capacityFull": True,
+                    "activePurchasers": currently_admitted,
+                    "purchasingCapacity": purchasing_capacity,
+                })
+            batch_size = available_slots
+            logger.info("Capacity-aware mode", extra={"slots": available_slots, "capacity": purchasing_capacity})
+
+        # Clamp batch size to a safe maximum
+        batch_size = min(batch_size, 500)
 
         logger.append_keys(eventId=event_id, batchSize=batch_size)
         logger.info("Processing admit users request")
@@ -168,6 +232,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "admittedUsers": admitted_count,
             "remainingQueue": remaining_queue,
             "admittedUserIds": admitted_user_ids,
+            "activePurchasers": int(stats.get("admittedUsers", 0)),
+            "purchasingCapacity": purchasing_capacity if capacity_mode else PURCHASING_CAPACITY,
         })
 
     except Exception:

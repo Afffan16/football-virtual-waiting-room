@@ -1,8 +1,8 @@
 # ⚙️ Performance Optimization Guide
 
-**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/14-optimization.md`
+**Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/11-optimization.md`
 
-← [Back: Cost Estimation](13-cost-estimation.md) · Next: [Final Solution →](15-final-solution.md)
+← [Back: Cost Estimation](10-cost-estimation.md) · Next: [Testing Guide →](12-testing-guide.md)
 
 ---
 
@@ -25,7 +25,7 @@
 
 ## Purpose
 
-This document describes the optimization strategies applied to the Football Virtual Waiting Room, and identifies future improvements that could push scalability further, reduce latency, or lower operational cost beyond what's already covered in [`13-cost-estimation.md`](13-cost-estimation.md).
+This document describes the optimization strategies applied to the Football Virtual Waiting Room, and identifies future improvements that could push scalability further, reduce latency, or lower operational cost beyond what's already covered in [`10-cost-estimation.md`](10-cost-estimation.md).
 
 The focus is primarily DynamoDB, since that's where most of the cost and latency lives — but API Gateway, Lambda, and the overall architecture are covered too.
 
@@ -129,7 +129,7 @@ Monitored continuously: Lambda duration, error rates, API latency, DynamoDB thro
 - Efficient attribute projection
 - Stateless Lambda functions
 
-Full breakdown: [`13-cost-estimation.md`](13-cost-estimation.md).
+Full breakdown: [`10-cost-estimation.md`](10-cost-estimation.md).
 
 ---
 
@@ -189,4 +189,4 @@ Already supports high concurrent reads, high concurrent writes, multiple simulta
 
 These optimizations keep the Football Virtual Waiting Room scalable, maintainable, and cost-effective, while staying aligned with the AWS Well-Architected Framework and DynamoDB best practices throughout.
 
-Next: [`15-final-solution.md`](15-final-solution.md) pulls everything together into the executive-level summary of the finished solution.
+Next: [`12-testing-guide.md`](12-testing-guide.md) — the complete testing reference.

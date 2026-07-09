@@ -225,11 +225,15 @@ AWS managed services provide multi-AZ resilience, automatic failover, and durabl
 ## Security
 
 - HTTPS-only communication
-- IAM least privilege
-- Encryption at rest and in transit
-- Input validation
-- Request authentication
-- Token expiration enforcement
+- IAM least privilege (read-only Lambdas get `DynamoDBReadPolicy`; write Lambdas get `DynamoDBCrudPolicy`)
+- Admin endpoint (`POST /queue/admit`) protected by `x-admin-api-key` header — enforced server-side using constant-time comparison
+- `ADMIN_API_KEY` injected via Lambda environment variable (`AdminApiKey` SAM parameter) — never hardcoded in source
+- Input length validation on all user-supplied fields
+- batchSize capped at 500 to prevent excessive DynamoDB writes per call
+- Encryption at rest (SSE enabled on DynamoDB table)
+- Encryption in transit (HTTPS everywhere)
+- Token expiration enforced (TTL + runtime check)
+- API Gateway stage throttling (200 req/s rate, 500 burst)
 
 ---
 
@@ -261,7 +265,7 @@ The application gracefully handles: duplicate registrations, invalid tokens, exp
 - No idle compute resources
 - Minimal Global Secondary Indexes
 
-Full cost model: [`13-cost-estimation.md`](13-cost-estimation.md).
+Full cost model: [`10-cost-estimation.md`](10-cost-estimation.md).
 
 ---
 

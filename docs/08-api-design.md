@@ -2,7 +2,7 @@
 
 **Author:** Muhammad Affan bin Aamir · **Version:** 1.0 · **Document:** `docs/08-api-design.md`
 
-← [Back: System Architecture](07-system-architecture.md) · Next: [Implementation Plan →](09-implementation-plan.md)
+← [Back: System Architecture](07-system-architecture.md) · Next: [Build Guide →](09-build-guide.md)
 
 ---
 
@@ -149,22 +149,38 @@ Allows a user to voluntarily leave the queue.
 
 Admits the next batch of waiting users.
 
+> 🔐 **Authorization required.** This endpoint requires the `x-admin-api-key` header. Requests without a valid key return `403 Forbidden`.
+
 <details>
 <summary><b>Request / Response</b></summary>
 
 **Request**
+```http
+POST /queue/admit
+Content-Type: application/json
+x-admin-api-key: <your-admin-api-key>
+```
 ```json
 { "eventId": "1001", "batchSize": 50 }
 ```
 
 **Success — `200 OK`**
 ```json
-{ "admittedUsers": 50, "remainingQueue": 18235 }
+{
+  "admittedUsers": 50,
+  "remainingQueue": 18235,
+  "admittedUserIds": ["FAN-001", "FAN-002", "..."]
+}
 ```
 
-**DynamoDB Operations:** Query queue → update queue entries → generate admission tokens
+**Unauthorized — `403 Forbidden`**
+```json
+{ "error": { "code": "FORBIDDEN", "message": "Admin authorization required." } }
+```
 
-**Authorization:** Administrator only.
+**DynamoDB Operations:** Query GSI3 (WAITING status) → batch UpdateItem → PutItem (admission tokens)
+
+**Authorization:** Pass `x-admin-api-key: <key>` header. The key is set via the `AdminApiKey` SAM parameter at deploy time. Maximum `batchSize` is capped at 500.
 
 </details>
 
@@ -318,11 +334,14 @@ Especially important for unreliable mobile networks and browser retries — see 
 ## Security Considerations
 
 - HTTPS only
-- Input validation on every request
-- Authorization before business logic executes
-- No sensitive information in responses
+- Input validation on every request (field presence + length limits)
+- Admin endpoints protected by `x-admin-api-key` header (checked server-side with constant-time comparison to prevent timing attacks)
+- `ADMIN_API_KEY` injected via Lambda environment variable — set via SAM `AdminApiKey` parameter, never hardcoded in source
+- No sensitive information in error responses
 - Token expiration strictly enforced
 - Least-privilege IAM roles per Lambda
+- API Gateway stage-level throttling (200 req/s rate limit, 500 burst)
+- For production: move `ADMIN_API_KEY` to AWS Secrets Manager; add Cognito/Lambda Authorizer for user identity; restrict `AllowOrigin` to your domain
 
 ---
 
@@ -343,4 +362,4 @@ These identifiers simplify debugging and distributed tracing across API Gateway 
 
 The REST API is stateless, secure, idempotent, scalable, and easy to consume. Each endpoint maps cleanly to the DynamoDB access patterns and indexes established earlier in the design — ensuring low latency and predictable performance under heavy load.
 
-A ready-to-use request collection is available in [`../postman/`](../postman/). Next: [`09-implementation-plan.md`](09-implementation-plan.md) covers how this API and its backing infrastructure were actually built.
+A ready-to-use request collection is available in [`../postman/`](../postman/). Next: [`09-build-guide.md`](09-build-guide.md) covers how this API and its backing infrastructure were actually built.

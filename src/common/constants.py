@@ -97,6 +97,14 @@ SESSION_TTL_MINUTES: int = int(os.environ.get("SESSION_TTL_MINUTES", "30"))
 DEFAULT_BATCH_SIZE: int = int(os.environ.get("DEFAULT_BATCH_SIZE", "50"))
 
 # ---------------------------------------------------------------------------
+# Stretch Goal — Active Purchaser Cap
+# ---------------------------------------------------------------------------
+# Maximum number of fans allowed in the ADMITTED/purchasing state at once.
+# When admitted users complete or expire, the admit endpoint auto-refills
+# up to this limit. Set via SAM parameter PurchasingCapacity.
+PURCHASING_CAPACITY: int = int(os.environ.get("PURCHASING_CAPACITY", "1000"))
+
+# ---------------------------------------------------------------------------
 # Queue Position Formatting
 # ---------------------------------------------------------------------------
 QUEUE_POSITION_PAD_LENGTH: int = 10  # Zero-pad to 10 digits

@@ -175,9 +175,9 @@ The challenge is considered successful if the solution can:
 | API Design | [`08-api-design.md`](08-api-design.md) |
 | Architecture Diagram | [`07-system-architecture.md`](07-system-architecture.md), [`../diagrams/architecture-diagrams.md`](../diagrams/architecture-diagrams.md) |
 | Infrastructure Documentation | `template.yaml` |
-| Implementation Guide | [`10-step-by-step-build.md`](10-step-by-step-build.md) |
-| Testing Strategy | [`11-testing-plan.md`](11-testing-plan.md), [`12-load-testing.md`](12-load-testing.md) |
-| Optimization Recommendations | [`14-optimization.md`](14-optimization.md) |
+| Implementation Guide | [`09-build-guide.md`](09-build-guide.md) |
+| Testing Strategy | [`12-testing-guide.md`](12-testing-guide.md) |
+| Optimization Recommendations | [`11-optimization.md`](11-optimization.md) |
 
 ---
 

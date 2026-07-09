@@ -35,22 +35,26 @@ The objective: design a highly scalable, fair, and cost-efficient waiting room c
 
 <div align="center">
 
-### ✅ Core Implementation Complete
+### ✅ Core Implementation Complete — UI & Security Updated
 
 </div>
 
-All core Lambda functions, the shared common library, utility scripts, and the SAM template have been fully implemented and are covered by the test suite.
+All core Lambda functions, the shared common library, utility scripts, the SAM template, the frontend SPA, and the load testing script have been fully implemented.
 
 | Area | Status |
 |---|---|
 | Infrastructure (`template.yaml`) | ✅ Complete |
 | Shared common module | ✅ Complete |
 | All 7 Lambda functions | ✅ Complete |
+| API security (admin key auth, input validation) | ✅ Complete |
+| Frontend SPA (Home, Admin, Events, Event Detail) | ✅ Complete |
+| Load testing script (`mass_ticket_requests.py`) | ✅ Complete |
 | Unit / integration / API tests | ✅ Complete |
-| Load testing scripts | ✅ Complete |
-| Design documentation (15 docs) | ✅ Complete |
+| Design documentation (17 docs) | ✅ Complete |
+| Testing Guide | ✅ Complete |
+| Deployment Guide | ✅ Complete |
 | CI pipeline | ✅ Complete |
-| Production deployment | ⏳ Not yet deployed |
+| Production deployment | ✅ Deployed |
 
 ---
 
@@ -82,7 +86,7 @@ football-virtual-waiting-room/
 
 ## Documentation
 
-All 16 design documents are complete, forming a full engineering log from problem statement to final solution:
+All 13 design documents are complete, forming a full engineering log from problem statement to deployment:
 
 | # | Document | Status |
 |---|---|---|
@@ -94,13 +98,11 @@ All 16 design documents are complete, forming a full engineering log from proble
 | 06 | [Index Design](06-index-design.md) | ✅ |
 | 07 | [System Architecture](07-system-architecture.md) | ✅ |
 | 08 | [API Design](08-api-design.md) | ✅ |
-| 09 | [Implementation Plan](09-implementation-plan.md) | ✅ |
-| 10 | [Step-by-Step Build Guide](10-step-by-step-build.md) | ✅ |
-| 11 | [Testing Plan](11-testing-plan.md) | ✅ |
-| 12 | [Load Testing](12-load-testing.md) | ✅ |
-| 13 | [Cost Estimation](13-cost-estimation.md) | ✅ |
-| 14 | [Optimization](14-optimization.md) | ✅ |
-| 15 | [Final Solution](15-final-solution.md) | ✅ |
+| 09 | [Build Guide](09-build-guide.md) | ✅ |
+| 10 | [Cost Estimation](10-cost-estimation.md) | ✅ |
+| 11 | [Optimization](11-optimization.md) | ✅ |
+| 12 | [Testing Guide](12-testing-guide.md) | ✅ |
+| 13 | [Deployment Guide](13-deployment-guide.md) | ✅ |
 
 Repository-level documentation is also complete: `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and local development setup instructions.
 
@@ -193,7 +195,7 @@ See [`04-data-model.md`](04-data-model.md), [`05-table-schema.md`](05-table-sche
 
 ## Development Phases
 
-All five phases below are complete. Kept here as a reference for anyone extending the project — this is the order the system was actually built in, and it's a reasonable order to follow for future additions too.
+All six phases below are complete.
 
 | Phase | Focus | Tasks | Status |
 |---|---|---|---|
@@ -201,7 +203,8 @@ All five phases below are complete. Kept here as a reference for anyone extendin
 | **2** | Shared Modules | `constants.py` · `logger.py` · `responses.py` · `models.py` · `utils.py` · `dynamodb.py` | ✅ |
 | **3** | Lambda Development | Join Queue → Queue Status → Leave Queue → Admit Users → Validate Token → Event Lookup → Statistics | ✅ |
 | **4** | Testing | Unit tests · Integration tests · API tests · Load tests · SAM Local validation | ✅ |
-| **5** | Deployment | Deploy via AWS SAM · validate resources · run end-to-end tests · collect metrics · capture screenshots | ⏳ Pending production deployment |
+| **5** | Deployment | Deploy via AWS SAM · validate resources · run end-to-end tests · collect metrics | ✅ |
+| **6** | Frontend & Security | Multi-page SPA (index.html · styles.css · app.js) · admin key auth on `/queue/admit` · input length validation · load test script | ✅ |
 
 ---
 
@@ -248,4 +251,28 @@ The project is considered complete when:
 
 ---
 
-*This document reflects the state of the project as of the last update. For the executive-level summary, see [`15-final-solution.md`](15-final-solution.md).*
+*This document reflects the current state of the project. For the executive summary, see the [Executive Summary](#executive-summary) section below.*
+
+---
+
+## Executive Summary
+
+The Football Virtual Waiting Room is a fully deployed, serverless application built to manage extremely high-demand ticket releases. It uses Amazon DynamoDB as its primary datastore, following an access-pattern-driven single-table design to deliver low-latency, highly scalable queue management.
+
+**Business problem:** during a popular ticket release, millions of users hit the platform simultaneously. Without a waiting room, the backend risks outages, overselling, and a poor user experience. The waiting room protects downstream services by controlling admission while preserving fairness — first in, first served.
+
+**Core AWS services:** Amazon API Gateway · AWS Lambda · Amazon DynamoDB · DynamoDB Streams · Amazon CloudWatch · AWS IAM.
+
+**DynamoDB design:** Single Table Design with six entity types, satisfying every access pattern in [`03-access-patterns.md`](03-access-patterns.md) without a single table scan — schema in [`05-table-schema.md`](05-table-schema.md), indexes in [`06-index-design.md`](06-index-design.md).
+
+**Key design decisions:**
+- Timestamp-based queue positions (no sequential counters = no hot partitions)
+- Immutable positions — only `status` changes (flat write volume at scale)
+- Conditional writes for idempotency
+- TTL-based automatic cleanup (zero cron jobs)
+- Admin endpoint protected by `x-admin-api-key` with `hmac.compare_digest`
+- API Gateway throttling + usage plan
+
+**Future enhancements:** WebSocket/SSE push updates (biggest single impact — replaces polling which drives the majority of read cost) · write sharding · multi-region Global Tables · Lambda Authorizer + Cognito for user identity · move admin key to Secrets Manager.
+
+*For the full engineering log, see [`docs/01`](01-challenge-details.md) through [`docs/17`](13-deployment-guide.md).*
