@@ -173,7 +173,6 @@ Resources:
   # --------------------------------------------------------------------------
   WaitingRoomApiKey:
     Type: AWS::ApiGateway::ApiKey
-    DependsOn: WaitingRoomApi
     Properties:
       Name: !Sub "FootballWaitingRoom-${StageName}-Key"
       Description: API key for Football Virtual Waiting Room — admin and rate-limiting tier
@@ -181,7 +180,6 @@ Resources:
 
   WaitingRoomUsagePlan:
     Type: AWS::ApiGateway::UsagePlan
-    DependsOn: WaitingRoomApi
     Properties:
       UsagePlanName: !Sub "FootballWaitingRoom-${StageName}-Plan"
       Description: Throttling and quota plan for the waiting-room API
