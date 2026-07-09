@@ -12,7 +12,7 @@ const API_BASE = "https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod";
 // In a production web app this should be read from a server-side
 // session or injected at build time, never committed to source control.
 // For this demo it is left configurable here.
-const ADMIN_API_KEY = "";
+const ADMIN_API_KEY = "53d1a2703d76b17c5fd1c9ddeb884572bb1de30956bdc2f1d27df074bf0503e5";
 
 // ---- Football events catalog (hardcoded for demo, matches seed_data.py) ----
 const EVENTS_CATALOG = [
@@ -499,8 +499,9 @@ async function userJoinQueue() {
         await userCheckStatus();
     } else {
         const errBody = data.body ? JSON.parse(data.body) : data;
-        detailLog(`❌ Failed: ${errBody.message || errBody.error || 'Unknown error'}`);
-        showToast(errBody.message || "Failed to join queue", "error");
+        const errMsg = errBody?.error?.message || errBody?.message || errBody?.error || 'Unknown error';
+        detailLog(`❌ Failed: ${errMsg}`);
+        showToast(errMsg || "Failed to join queue", "error");
     }
 
     loadEventStats();
