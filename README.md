@@ -2,7 +2,7 @@
 
 # 🏟️ Football Virtual Waiting Room
 
-### A serverless, DynamoDB-powered queue system built to survive a football match ticket drop
+### A serverless, DynamoDB-powered queue system built to survive a Manchester United vs. Liverpool ticket drop
 
 *AWS Builder Center — DynamoDB Data Modeling Challenge*
 
@@ -283,13 +283,12 @@ Full endpoint contracts, validation rules, and error schemas: [`docs/08-api-desi
 
 ```
 football-virtual-waiting-room/
-├── .github/workflows/      # CI pipeline (test + sam validate)
 ├── docs/                   # 13-part design & engineering log
 ├── diagrams/               # Architecture diagrams
 ├── frontend/               # Static SPA (index.html, styles.css, app.js)
-├── nosql-workbench/        # NoSQL Workbench data model JSON export
+├── nosql-workbench/        # NoSQL Workbench data model export
 ├── src/
-│   ├── common/             # Shared: dynamodb, models, responses, logger, utils, constants
+│   ├── common/             # Shared: dynamodb, models, responses, logger, utils, constants, auth
 │   ├── join_queue/
 │   ├── queue_status/
 │   ├── leave_queue/
@@ -312,6 +311,7 @@ football-virtual-waiting-room/
 │   ├── clear_event_records.py
 │   └── mass_ticket_requests.py   # 1M-request async load test
 ├── postman/                # API collection + environment
+├── cf-config.json          # CloudFront distribution config
 ├── template.yaml           # AWS SAM infrastructure definition
 └── samconfig.toml
 ```
@@ -322,7 +322,7 @@ football-virtual-waiting-room/
 
 ### Prerequisites
 
-- Python 3.14+
+- Python 3.12+
 - [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
 - An AWS account with configured credentials (`aws configure`)
 
@@ -331,7 +331,7 @@ football-virtual-waiting-room/
 ```bash
 git clone https://github.com/Afffan16/football-virtual-waiting-room.git
 cd football-virtual-waiting-room
-pip install -r requirements-dev.txt
+pip install -r requirements.txt
 ```
 
 ### 2. Run locally
@@ -393,7 +393,7 @@ sam deploy --parameter-overrides AdminApiKey="$(openssl rand -hex 32)"
 After editing files in `frontend/`, sync to S3 and invalidate the CloudFront cache so visitors see the update immediately:
 
 ```bash
-aws s3 sync ./folder <your s3 url> --delete
+aws s3 sync ./frontend s3://football-waiting-room-affan --delete
 aws cloudfront create-invalidation --distribution-id <YOUR_DISTRIBUTION_ID> --paths "/*"
 ```
 
@@ -410,8 +410,8 @@ pytest                        # full suite
 pytest --cov=src              # with coverage
 pytest tests/unit/            # unit tests only
 pytest tests/integration/     # integration tests only
-make lint                     # flake8
-make format                   # black
+flake8 src tests              # lint
+black src tests               # format
 ```
 
 ### Load testing
@@ -460,6 +460,18 @@ Full breakdown: [`docs/10-cost-estimation.md`](docs/10-cost-estimation.md).
 
 ---
 
+## 🗺️ Roadmap
+
+- [ ] Push-based queue updates via WebSocket / SSE (replace polling)
+- [ ] Multi-region deployment with DynamoDB Global Tables
+- [ ] Write sharding for extreme-scale events (`EVENT#id#SHARD#n`)
+- [ ] Lambda Authorizer / Cognito for verified user identity
+- [ ] Move admin key to AWS Secrets Manager
+- [ ] Redis/ElastiCache layer for hot read paths
+- [ ] Real-time analytics dashboard
+
+---
+
 ## 🤝 Contributing
 
 Fork, branch, write tests, and open a PR. See [`CONTRIBUTING.MD`](CONTRIBUTING.MD) for coding standards and the PR checklist.
@@ -467,8 +479,6 @@ Fork, branch, write tests, and open a PR. See [`CONTRIBUTING.MD`](CONTRIBUTING.M
 ## 📋 Challenge Deliverables
 
 Full breakdown of every challenge requirement and how it was met: **[`DELIVERABLES.md`](DELIVERABLES.md)**
-
-NoSQL Workbench export: **[`nosql-workbench/football-waiting-room-data-model.json`](nosql-workbench/football-waiting-room-data-model.json)**
 
 ## 📄 License
 
