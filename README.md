@@ -15,7 +15,7 @@
 
 [Overview](#-overview) •
 [Architecture](#-architecture) •
-[Data Model](#-data-model) •
+[Data Model](#%EF%B8%8F-data-model) •
 [Workbench Model](nosql-workbench/football-waiting-room-data-model.json) •
 [API](#-api-reference) •
 [Getting Started](#-getting-started) •
