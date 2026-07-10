@@ -38,7 +38,7 @@ Browser → API Gateway (HTTPS) → Lambda → DynamoDB
 
 ## Prerequisites
 
-- **Python 3.12+** — `python --version`
+- **Python 3.14+** — `python --version`
 - **AWS SAM CLI** — [install guide](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
 - **AWS CLI** — [install guide](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
 - **AWS credentials** — `aws configure` (or an IAM role if running from CI)
@@ -85,12 +85,12 @@ You'll be prompted for:
 | TokenTTLMinutes | `15` |
 | SessionTTLMinutes | `30` |
 | DefaultBatchSize | `50` |
-| **AdminApiKey** | A strong random string — keep this secret |
+| **AdminApiKey** | Optional strong random string for the API-key admin path |
 | Confirm changeset | `y` |
 | Allow SAM to create IAM roles | `y` |
 | Save to samconfig.toml | `y` |
 
-> 🔑 **AdminApiKey** is the secret that protects `POST /queue/admit`. Choose a strong value (e.g. `openssl rand -hex 32`). It will be stored as a Lambda environment variable — for production, consider storing it in AWS Secrets Manager and having the Lambda read it at runtime instead.
+> 🔑 **AdminApiKey** is the optional API-key path for admin endpoints. The demo dashboard also uses `AdminEmail` / `AdminPassword` headers. For production, move admin auth to Cognito, a Lambda Authorizer, or Secrets Manager-backed server-side auth.
 
 ### 3. Subsequent deploys
 
@@ -115,13 +115,13 @@ Copy this URL — you'll need it for the frontend.
 
 ## Seeding the Database
 
-The SAM deploy creates the DynamoDB table but leaves it empty. Seed it with the six football events used by the frontend:
+The SAM deploy creates the DynamoDB table but leaves it empty. Seed it with the DynamoDB-backed event catalog:
 
 ```bash
-# Seed event 1001 (single default event)
+# Seed the event catalog and initial stats rows
 python scripts/seed_data.py
 
-# Seed all 6 events + test data
+# Optional: add generated queue/test data
 python scripts/generate_test_data.py
 ```
 
@@ -166,10 +166,9 @@ Open `frontend/app.js` and set `API_BASE` to your deployed API Gateway URL:
 
 ```js
 const API_BASE = "https://<your-api-id>.execute-api.<region>.amazonaws.com/Prod";
-const ADMIN_API_KEY = "your-admin-api-key-here"; // keep this private
 ```
 
-> For a real production deployment, do **not** hardcode the admin key in the frontend source. Serve the frontend from a backend that injects it via a session cookie, or require admins to authenticate separately. The key in `app.js` is for local/demo use.
+> The demo frontend sends admin login credentials as headers after the admin signs in. Do not expose long-lived production admin secrets from static frontend source.
 
 ### Step 2 — Create an S3 bucket
 
@@ -190,7 +189,7 @@ aws s3 website s3://football-waiting-room-frontend-<your-name> \
 ```bash
 aws s3 sync frontend/ s3://football-waiting-room-frontend-<your-name> \
   --acl public-read \
-  --cache-control "max-age=86400"
+  --cache-control "no-cache, no-store, must-revalidate"
 ```
 
 ### Step 5 — Create a CloudFront distribution
@@ -221,29 +220,35 @@ After deploying, run these checks:
 
 ```bash
 export API_URL="https://<your-api-id>.execute-api.<region>.amazonaws.com/Prod"
-export ADMIN_KEY="your-admin-api-key"
+export ADMIN_EMAIL="admin123@gmail.com"
+export ADMIN_PASSWORD="admin123"
+export ADMIN_KEY="your-admin-api-key"   # optional API-key path
 
-# 1. Get event details
+# 1. List events
+curl -s "$API_URL/events" | python -m json.tool
+
+# 2. Get event details
 curl -s "$API_URL/event/1001" | python -m json.tool
 
-# 2. Get stats
+# 3. Get stats
 curl -s "$API_URL/event/1001/stats" | python -m json.tool
 
-# 3. Join queue
+# 4. Join queue
 curl -s -X POST "$API_URL/queue/join" \
   -H "Content-Type: application/json" \
   -d '{"eventId":"1001","userId":"DEPLOY-TEST-001"}' | python -m json.tool
 
-# 4. Check status
+# 5. Check status
 curl -s "$API_URL/queue/status?eventId=1001&userId=DEPLOY-TEST-001" | python -m json.tool
 
-# 5. Admit (admin)
+# 6. Admit (admin)
 curl -s -X POST "$API_URL/queue/admit" \
   -H "Content-Type: application/json" \
-  -H "x-admin-api-key: $ADMIN_KEY" \
+  -H "x-admin-email: $ADMIN_EMAIL" \
+  -H "x-admin-password: $ADMIN_PASSWORD" \
   -d '{"eventId":"1001","batchSize":1}' | python -m json.tool
 
-# 6. Confirm admit is blocked without key
+# 7. Confirm admit is blocked without admin credentials
 curl -s -X POST "$API_URL/queue/admit" \
   -H "Content-Type: application/json" \
   -d '{"eventId":"1001","batchSize":1}' | python -m json.tool
@@ -271,7 +276,9 @@ sam deploy --parameter-overrides \
 | `TOKEN_TTL_MINUTES` | `15` | Admission token lifetime |
 | `SESSION_TTL_MINUTES` | `30` | Session lifetime |
 | `DEFAULT_BATCH_SIZE` | `50` | Admit batch size when not specified |
-| `ADMIN_API_KEY` | *(empty)* | Protects POST /queue/admit |
+| `ADMIN_EMAIL` | `admin123@gmail.com` | Demo admin email |
+| `ADMIN_PASSWORD` | `admin123` | Demo admin password |
+| `ADMIN_API_KEY` | *(empty)* | Optional API-key admin path |
 
 ---
 
@@ -351,8 +358,10 @@ On-Demand is fine for a ticket drop (unpredictable burst). For a sustained high-
 | `sam deploy` fails with permission error | Check your IAM user/role has CloudFormation + IAM permissions |
 | API returns 500 | Check Lambda logs in CloudWatch: `aws logs tail /aws/lambda/JoinQueueFunction --follow` |
 | DynamoDB table not found | Run `python scripts/seed_data.py` after first deploy |
-| `POST /queue/admit` returns 403 | Check `x-admin-api-key` header matches the value you passed as `AdminApiKey` during deploy |
+| `POST /queue/admit` returns 403 | Check demo admin headers or the optional `x-admin-api-key` value |
 | `POST /queue/join` returns 403 | Event status is not `OPEN` — seed the event data |
+| `POST /queue/join` returns 500 with `TransactWriteItems` denied | Redeploy `template.yaml`; transactional writers need explicit `dynamodb:TransactWriteItems` IAM permission |
+| `POST /queue/join` returns 500 with `Type mismatch for key PK expected: S actual: M` | Ensure `src/common/dynamodb.py` sends plain Python values for resource-backed transaction items |
 | Frontend can't reach API | Check `API_BASE` in `frontend/app.js` matches your deployed URL |
 | CORS errors in browser | Verify `AllowOrigin` in `template.yaml` includes your frontend's origin |
 

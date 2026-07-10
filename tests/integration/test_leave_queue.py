@@ -48,7 +48,7 @@ class TestLeaveQueueHandler:
         response = lambda_handler(event, lambda_context)
         assert response["statusCode"] == 404
 
-    def test_leave_queue_already_cancelled(self, seeded_table: Any, lambda_context: MockLambdaContext) -> None:
+    def test_leave_queue_removes_active_registration(self, seeded_table: Any, lambda_context: MockLambdaContext) -> None:
         from leave_queue.app import lambda_handler
 
         _join_user(seeded_table, lambda_context)
@@ -59,9 +59,21 @@ class TestLeaveQueueHandler:
         r1 = lambda_handler(leave_event, lambda_context)
         assert r1["statusCode"] == 200
 
-        # Second leave fails — already CANCELLED
+        # Second leave fails because there is no active registration.
         r2 = lambda_handler(leave_event, lambda_context)
-        assert r2["statusCode"] == 409
+        assert r2["statusCode"] == 404
+
+    def test_user_can_rejoin_after_leaving(self, seeded_table: Any, lambda_context: MockLambdaContext) -> None:
+        from join_queue.app import lambda_handler as join_handler
+        from leave_queue.app import lambda_handler as leave_handler
+
+        _join_user(seeded_table, lambda_context)
+        leave_event = make_apigw_event(body={"eventId": "1001", "userId": "user_001"})
+        assert leave_handler(leave_event, lambda_context)["statusCode"] == 200
+
+        rejoin_event = make_apigw_event(body={"eventId": "1001", "userId": "user_001"})
+        response = join_handler(rejoin_event, lambda_context)
+        assert response["statusCode"] == 201
 
     def test_leave_queue_updates_stats(self, seeded_table: Any, lambda_context: MockLambdaContext) -> None:
         from leave_queue.app import lambda_handler

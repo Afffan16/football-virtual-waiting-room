@@ -33,13 +33,13 @@ Each endpoint maps directly to one or more optimized DynamoDB operations from [`
 ## Base URL & Authentication
 
 ```
-https://api.example.com/v1
+https://<api-id>.execute-api.<region>.amazonaws.com/Prod
 ```
 
 | | |
 |---|---|
 | **Content-Type** | `application/json` |
-| **Authentication** | Assumed to occur before requests reach the application. Possible mechanisms: JWT, Amazon Cognito, IAM Authorization, or a Lambda Authorizer. |
+| **Authentication** | Public user endpoints are unauthenticated for the demo. Admin endpoints accept demo dashboard headers (`x-admin-email`, `x-admin-password`) or `x-admin-api-key`. Production should replace this with Cognito/JWT/Lambda Authorizer. |
 
 ---
 
@@ -47,13 +47,16 @@ https://api.example.com/v1
 
 | Method | Endpoint | Purpose | DynamoDB Op |
 |---|---|---|---|
-| `POST` | `/queue/join` | Join waiting room | Conditional `PutItem` |
-| `GET` | `/queue/status` | Retrieve queue status | `Query` (GSI1) |
+| `POST` | `/queue/join` | Join waiting room | `TransactWriteItems` + sharded stats `UpdateItem` |
+| `GET` | `/queue/status` | Retrieve queue status | `GetItem` guard + `GetItem` queue row |
 | `POST` | `/queue/leave` | Leave queue | `UpdateItem` |
 | `POST` | `/queue/admit` | Admit next users *(Admin)* | `Query` + `UpdateItem` |
+| `GET` | `/queue/admin/list` | List queue rows *(Admin)* | `Query` (GSI3) |
 | `POST` | `/token/validate` | Validate admission token | `GetItem` / GSI2 |
+| `GET` | `/events` | List events | `Scan` filtered to event metadata |
+| `POST` | `/event` | Create event *(Admin)* | `TransactWriteItems` |
 | `GET` | `/event/{eventId}` | Event information | `GetItem` |
-| `GET` | `/event/{eventId}/stats` | Queue statistics | `GetItem` (STATS item) |
+| `GET` | `/event/{eventId}/stats` | Queue statistics | `GetItem` + sharded stats aggregation |
 
 ---
 
@@ -75,7 +78,7 @@ Registers a user in the waiting room.
 ```json
 {
   "message": "Successfully joined queue.",
-  "queuePosition": 123,
+  "queuePosition": "2026-07-10T18:01:22.123456Z#8f4a",
   "status": "WAITING",
   "estimatedWaitMinutes": 18
 }
@@ -104,19 +107,19 @@ Returns the current status of the authenticated user's queue entry.
 <details>
 <summary><b>Request / Response</b></summary>
 
-**Query Parameters:** `eventId=1001`
+**Query Parameters:** `eventId=1001&userId=501`
 
 **Success — `200 OK`**
 ```json
 {
   "eventId": "1001",
-  "queuePosition": 123,
+  "queuePosition": "2026-07-10T18:01:22.123456Z#8f4a",
   "status": "WAITING",
   "estimatedWaitMinutes": 18
 }
 ```
 
-**DynamoDB Operation:** `Query` (GSI1)
+**DynamoDB Operation:** `GetItem` registration guard, then `GetItem` queue row.
 
 </details>
 
@@ -149,7 +152,7 @@ Allows a user to voluntarily leave the queue.
 
 Admits the next batch of waiting users.
 
-> 🔐 **Authorization required.** This endpoint requires the `x-admin-api-key` header. Requests without a valid key return `403 Forbidden`.
+> 🔐 **Authorization required.** This endpoint accepts the demo admin headers or `x-admin-api-key`. Requests without valid admin credentials return `403 Forbidden`.
 
 <details>
 <summary><b>Request / Response</b></summary>
@@ -159,6 +162,8 @@ Admits the next batch of waiting users.
 POST /queue/admit
 Content-Type: application/json
 x-admin-api-key: <your-admin-api-key>
+x-admin-email: admin123@gmail.com
+x-admin-password: admin123
 ```
 ```json
 { "eventId": "1001", "batchSize": 50 }
@@ -180,7 +185,7 @@ x-admin-api-key: <your-admin-api-key>
 
 **DynamoDB Operations:** Query GSI3 (WAITING status) → batch UpdateItem → PutItem (admission tokens)
 
-**Authorization:** Pass `x-admin-api-key: <key>` header. The key is set via the `AdminApiKey` SAM parameter at deploy time. Maximum `batchSize` is capped at 500.
+**Authorization:** Pass either `x-admin-api-key: <key>` or the demo `x-admin-email` / `x-admin-password` headers. Maximum `batchSize` is capped at 500.
 
 </details>
 

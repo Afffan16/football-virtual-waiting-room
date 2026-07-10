@@ -42,7 +42,7 @@ This guide covers every layer of testing for the Football Virtual Waiting Room:
 ## Prerequisites
 
 ```bash
-# Python 3.12+
+# Python 3.14+
 python --version
 
 # Install dev dependencies
@@ -127,7 +127,9 @@ API contract tests run against the **deployed** API. Set your endpoint URL first
 
 ```bash
 export API_URL="https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod"
-export ADMIN_API_KEY="your-admin-key-here"
+export ADMIN_EMAIL="admin123@gmail.com"
+export ADMIN_PASSWORD="admin123"
+export ADMIN_API_KEY="your-admin-key-here"   # optional API-key path
 
 pytest tests/api/ -v
 ```
@@ -180,11 +182,13 @@ python scripts/mass_ticket_requests.py --total 1000000 --concurrency 150 --event
 
 ## Manual Testing with cURL
 
-Replace `$API_URL` and `$ADMIN_KEY` with your values.
+Replace `$API_URL` and the admin credentials with your values.
 
 ```bash
 export API_URL="https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod"
-export ADMIN_KEY="your-admin-key"
+export ADMIN_EMAIL="admin123@gmail.com"
+export ADMIN_PASSWORD="admin123"
+export ADMIN_KEY="your-admin-key"   # optional API-key path
 ```
 
 ### Join the queue
@@ -215,18 +219,19 @@ curl -s -X POST "$API_URL/queue/leave" \
 
 Expected: HTTP 200, `message: "You have left the queue."`.
 
-### Admit a batch (admin — requires API key)
+### Admit a batch (admin)
 
 ```bash
 curl -s -X POST "$API_URL/queue/admit" \
   -H "Content-Type: application/json" \
-  -H "x-admin-api-key: $ADMIN_KEY" \
+  -H "x-admin-email: $ADMIN_EMAIL" \
+  -H "x-admin-password: $ADMIN_PASSWORD" \
   -d '{"eventId": "1001", "batchSize": 5}' | python -m json.tool
 ```
 
 Expected: HTTP 200, `admittedUsers`, `remainingQueue`, `admittedUserIds`.
 
-Calling without the key should return 403 Forbidden.
+Calling without admin headers or API key should return 403 Forbidden.
 
 ### Validate an admission token
 
@@ -306,8 +311,8 @@ sam local invoke AdmitUsersFunction --event events/admit_users.json
 
 | Test | Expected result |
 |---|---|
-| `POST /queue/admit` without `x-admin-api-key` header | 403 Forbidden |
-| `POST /queue/admit` with wrong API key | 403 Forbidden |
+| `POST /queue/admit` without admin credentials | 403 Forbidden |
+| `POST /queue/admit` with wrong API key or demo admin headers | 403 Forbidden |
 | `POST /queue/admit` with correct API key | 200 OK |
 | `POST /queue/join` with `eventId` of 200+ characters | 400 Bad Request |
 | `POST /queue/join` with `userId` of 200+ characters | 400 Bad Request |

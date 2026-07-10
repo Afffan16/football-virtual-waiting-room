@@ -13,7 +13,7 @@
 - [Overview](#overview)
 - [GSI1 — User Queue Lookup](#gsi1--user-queue-lookup)
 - [GSI2 — Token Lookup](#gsi2--token-lookup)
-- [GSI3 — Administrative Queue View (Optional)](#gsi3--administrative-queue-view-optional)
+- [GSI3 — Administrative Queue View](#gsi3--administrative-queue-view)
 - [Sparse Indexes](#sparse-indexes)
 - [Projected Attributes](#projected-attributes)
 - [Read Patterns](#read-patterns)
@@ -47,20 +47,20 @@ flowchart LR
     T[("FootballWaitingRoom<br/>Primary Table<br/>PK / SK")]
     T -.-> G1["GSI1<br/>Find Queue Entry by User"]
     T -.-> G2["GSI2<br/>Find Admission Token"]
-    T -.-> G3["GSI3 (optional)<br/>Administrative Event Queries"]
+    T -.-> G3["GSI3<br/>Administrative Queue View"]
 ```
 
 | Index | Purpose | Serves Access Pattern |
 |---|---|---|
-| **GSI1** | Find Queue Entry by User | AP-02 Check Queue Status |
+| **GSI1** | Legacy/user queue projection for active queue rows | AP-02 Check Queue Status / Resume Session |
 | **GSI2** | Find Admission Token | AP-06 Validate Token |
-| **GSI3** *(optional)* | Administrative Event Queries | AP-09 Admin View / AP-10 Statistics |
+| **GSI3** | Administrative Queue View | AP-09 Admin View / AP-10 Statistics |
 
 ---
 
 ## GSI1 — User Queue Lookup
 
-Lets the application retrieve a user's queue entry without knowing its physical location in the base table.
+Lets the application retrieve a user's projected queue entry without knowing its physical location in the base table. The current status endpoint first reads the registration guard with the base table key, then follows `queuePK`/`queueSK` to the active queue row; GSI1 remains useful for compatibility, resume flows, and projected user dashboards.
 
 **Supports:** Queue Status · Resume Session · Mobile Refresh · User Dashboard
 
@@ -91,9 +91,9 @@ Admission tokens must be validated before a user enters the ticket-purchasing sy
 
 ---
 
-## GSI3 — Administrative Queue View (Optional)
+## GSI3 — Administrative Queue View
 
-Not used by customer-facing APIs — exists purely for operations dashboards, monitoring, and analytics.
+Used by the admin dashboard and admission flow to list event queue rows by status without scanning the base table.
 
 | | |
 |---|---|
@@ -133,7 +133,7 @@ Only necessary attributes are projected into each index — every projected fiel
 |---|---|---|
 | **GSI1** | Queue Position, Queue Status, Event ID, Join Time | Supports queue lookup without fetching the base item |
 | **GSI2** | Status, Expiration, User ID | Enables token validation in a single request |
-| **GSI3** | Queue Position, Status, User ID | Supports administrative dashboards |
+| **GSI3** | Queue Position, Status, User ID, Entity Type | Supports administrative dashboards |
 
 ---
 
@@ -141,10 +141,10 @@ Only necessary attributes are projected into each index — every projected fiel
 
 | Operation | Index |
 |---|---|
-| Queue Status | GSI1 |
+| Queue Status | Base table registration guard, then base table queue row |
 | Resume Session | GSI1 |
 | Token Validation | GSI2 |
-| Admin Dashboard | GSI3 |
+| Admin Dashboard / Admit Users | GSI3 |
 
 ---
 

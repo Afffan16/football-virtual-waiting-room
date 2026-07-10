@@ -27,7 +27,10 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if status == "ALL":
             status = None
         if status and status not in VALID_QUEUE_STATUSES:
-            return bad_request("status must be one of WAITING, ADMITTED, COMPLETED, EXPIRED, CANCELLED, or ALL.")
+            return bad_request(
+                "status must be one of WAITING, ADMITTED, COMPLETED, EXPIRED, CANCELLED, "
+                "REGISTRATION_CLOSED, or ALL."
+            )
 
         try:
             limit = int(get_query_parameter(event, "limit") or "100")
@@ -62,6 +65,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 "cancelledUsers": int(stats.get("cancelledUsers", 0)),
                 "expiredUsers": int(stats.get("expiredUsers", 0)),
                 "completedUsers": int(stats.get("completedUsers", 0)),
+                "closedUsers": int(stats.get("closedUsers", 0)),
                 "totalUsers": int(stats.get("totalUsers", 0)),
             },
         })

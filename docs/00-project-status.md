@@ -35,7 +35,7 @@ The objective: design a highly scalable, fair, and cost-efficient waiting room c
 
 <div align="center">
 
-### ✅ Core Implementation Complete — UI & Security Updated
+### ✅ Core Implementation Complete — DynamoDB Event Catalog & Admin Flows Updated
 
 </div>
 
@@ -45,12 +45,12 @@ All core Lambda functions, the shared common library, utility scripts, the SAM t
 |---|---|
 | Infrastructure (`template.yaml`) | ✅ Complete |
 | Shared common module | ✅ Complete |
-| All 7 Lambda functions | ✅ Complete |
+| All 10 Lambda functions | ✅ Complete |
 | API security (admin key auth, input validation) | ✅ Complete |
 | Frontend SPA (Home, Admin, Events, Event Detail) | ✅ Complete |
 | Load testing script (`mass_ticket_requests.py`) | ✅ Complete |
 | Unit / integration / API tests | ✅ Complete |
-| Design documentation (17 docs) | ✅ Complete |
+| Design documentation (13 docs) | ✅ Complete |
 | Testing Guide | ✅ Complete |
 | Deployment Guide | ✅ Complete |
 | CI pipeline | ✅ Complete |
@@ -67,7 +67,7 @@ football-virtual-waiting-room/
 ├── diagrams/              # Architecture diagrams
 ├── events/                # Sample Lambda test events (SAM local)
 ├── postman/               # API collection + environment
-├── scripts/               # seed_data.py, generate_test_data.py
+├── scripts/               # seed, cleanup, test-data, and load-test scripts
 ├── src/                   # Lambda source + shared common library
 ├── tests/                 # unit / integration / api / load
 ├── template.yaml          # AWS SAM infrastructure definition
@@ -119,6 +119,9 @@ src/
 ├── admit_users/
 ├── validate_token/
 ├── event_lookup/
+├── events/
+├── admin_event/
+├── admin_queue_list/
 └── statistics/
 ```
 
@@ -143,8 +146,11 @@ Each folder maps to exactly one Lambda function, except `common/`, which holds s
 | **Queue Status** | Returns a user's current queue information |
 | **Leave Queue** | Removes users from the queue |
 | **Admit Users** | Processes batch admissions |
+| **Admin Queue List** | Lists real queue entries for dashboard views |
 | **Validate Token** | Validates admission tokens |
 | **Event Lookup** | Returns event details |
+| **Events List** | Returns all event metadata |
+| **Admin Event Create** | Creates an event and its initial stats row |
 | **Statistics** | Returns queue analytics |
 
 ---
@@ -172,6 +178,8 @@ Infrastructure is fully managed using **AWS SAM** (CloudFormation under the hood
 - No table scans — query-only access
 - Access-pattern driven (every index maps to a real query)
 - Conditional writes for idempotency
+- Transactional writes for queue registration guards and admin event creation
+- Sharded statistics counters for hot-path writes
 - TTL-based automatic cleanup
 - Minimal, justified GSIs
 - Immutable queue positions (status changes instead of position rewrites)
@@ -201,16 +209,16 @@ All six phases below are complete.
 |---|---|---|---|
 | **1** | Infrastructure | Design `template.yaml` · create DynamoDB table · configure GSIs · configure TTL · enable Streams · create IAM roles · configure API Gateway | ✅ |
 | **2** | Shared Modules | `constants.py` · `logger.py` · `responses.py` · `models.py` · `utils.py` · `dynamodb.py` | ✅ |
-| **3** | Lambda Development | Join Queue → Queue Status → Leave Queue → Admit Users → Validate Token → Event Lookup → Statistics | ✅ |
+| **3** | Lambda Development | Join Queue → Queue Status → Leave Queue → Admit Users → Admin Queue List → Validate Token → Event Lookup → Events List → Admin Event Create → Statistics | ✅ |
 | **4** | Testing | Unit tests · Integration tests · API tests · Load tests · SAM Local validation | ✅ |
 | **5** | Deployment | Deploy via AWS SAM · validate resources · run end-to-end tests · collect metrics | ✅ |
-| **6** | Frontend & Security | Multi-page SPA (index.html · styles.css · app.js) · admin key auth on `/queue/admit` · input length validation · load test script | ✅ |
+| **6** | Frontend & Security | Multi-page SPA (index.html · styles.css · app.js) · demo admin login · admin headers/API-key support · input length validation · load test script | ✅ |
 
 ---
 
 ## Coding Standards
 
-- Python 3.12
+- Python 3.14
 - Type hints throughout
 - PEP 8
 - Structured (JSON) logging
@@ -270,9 +278,10 @@ The Football Virtual Waiting Room is a fully deployed, serverless application bu
 - Immutable positions — only `status` changes (flat write volume at scale)
 - Conditional writes for idempotency
 - TTL-based automatic cleanup (zero cron jobs)
-- Admin endpoint protected by `x-admin-api-key` with `hmac.compare_digest`
+- Admin endpoints protected by demo admin headers or `x-admin-api-key` with `hmac.compare_digest`
 - API Gateway throttling + usage plan
+- DynamoDB transaction permissions explicitly granted where needed (`dynamodb:TransactWriteItems`)
 
 **Future enhancements:** WebSocket/SSE push updates (biggest single impact — replaces polling which drives the majority of read cost) · write sharding · multi-region Global Tables · Lambda Authorizer + Cognito for user identity · move admin key to Secrets Manager.
 
-*For the full engineering log, see [`docs/01`](01-challenge-details.md) through [`docs/17`](13-deployment-guide.md).*
+*For the full engineering log, see [`docs/01`](01-challenge-details.md) through [`docs/13`](13-deployment-guide.md).*

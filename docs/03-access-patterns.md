@@ -58,6 +58,8 @@ Every access pattern in this document is held to the same bar:
 | AP-08 | Update Queue Status | 🟡 Medium |
 | AP-09 | List Users for Event (Admin) | 🟢 Low |
 | AP-10 | View Queue Statistics | 🟢 Low |
+| AP-11 | List Events | 🟢 Low |
+| AP-12 | Create Event (Admin) | 🟢 Low |
 
 ---
 
@@ -71,10 +73,10 @@ A user joins the waiting room for a football event.
 |---|---|
 | **Input** | User ID, Event ID, Join Timestamp |
 | **Output** | Queue Position, Queue Status |
-| **DynamoDB Operation** | `PutItem` |
-| **Conditional Expression** | `attribute_not_exists(PK)` |
+| **DynamoDB Operation** | `TransactWriteItems` |
+| **Conditional Expression** | `attribute_not_exists(PK) AND attribute_not_exists(SK)` on the guard and queue row |
 | **Requirements** | Prevent duplicate registrations · assign queue metadata · complete in milliseconds |
-| **Expected Cost** | 1 Write Capacity Unit |
+| **Expected Cost** | 2 transactional writes plus sharded stats increment |
 
 ### AP-02 — Check Queue Status
 
@@ -84,7 +86,7 @@ Retrieve a user's current waiting status.
 |---|---|
 | **Input** | User ID, Event ID |
 | **Output** | Position, Status, Estimated Wait, Event |
-| **DynamoDB Operation** | `Query` |
+| **DynamoDB Operation** | `GetItem` registration guard → `GetItem` queue row |
 | **Requirements** | No scans · returns exactly one queue record |
 | **Frequency** | 🔥 Very High — users may poll every few seconds |
 
@@ -171,6 +173,28 @@ Retrieve queue metrics: current queue size, users admitted, users waiting, expir
 |---|---|
 | **DynamoDB Operation** | Aggregated counters / derived metrics — never a scan |
 
+### AP-11 — List Events
+
+Return the event catalog used by the frontend.
+
+| | |
+|---|---|
+| **Input** | None |
+| **Output** | Event metadata list |
+| **DynamoDB Operation** | Filtered `Scan` over event metadata |
+| **Usage** | Low-frequency catalog load; the old hardcoded catalog remains a frontend fallback |
+
+### AP-12 — Create Event
+
+Admin creates a new football event and its initial statistics row.
+
+| | |
+|---|---|
+| **Input** | Event ID, match name, stadium, capacity, start time, status |
+| **Output** | Created event metadata |
+| **DynamoDB Operation** | `TransactWriteItems` |
+| **Requirements** | Event metadata and stats row must be created atomically |
+
 ---
 
 ## Read vs. Write Analysis
@@ -209,8 +233,8 @@ pie showData
 
 | Access Pattern | DynamoDB Operation | Expected Result |
 |---|---|---|
-| Join Queue | `PutItem` | Queue created |
-| Check Queue | `Query` | Single queue record |
+| Join Queue | `TransactWriteItems` | Guard and queue row created |
+| Check Queue | `GetItem` x2 | Single active queue record |
 | Event Lookup | `GetItem` | Event metadata |
 | Admit Users | `Query` | Ordered batch |
 | Issue Token | `PutItem` | Token created |
@@ -219,6 +243,8 @@ pie showData
 | Remove Session | TTL | Record deleted |
 | Admin Event View | `Query` | Event users |
 | Queue Metrics | `Query` / Counters | Statistics |
+| List Events | `Scan` (event metadata only) | Event catalog |
+| Create Event | `TransactWriteItems` | Event + stats created |
 
 ---
 
@@ -254,6 +280,7 @@ From this analysis, the final DynamoDB model must support:
 - Automatic expiration
 - Atomic updates
 - Conditional writes
+- Transactional writes for multi-item invariants
 - Efficient indexing
 
 These requirements directly shape the Partition Key, Sort Key, and GSI design in the next two documents: [`04-data-model.md`](04-data-model.md) and [`05-table-schema.md`](05-table-schema.md).

@@ -172,6 +172,26 @@
             </div>
         </div>
 
+        <div class="glass-card admin-create-event-card">
+            <div class="table-header">
+                <h2 class="table-title">Add Event</h2>
+            </div>
+            <div class="admin-event-form">
+                <input type="text" class="input-field" id="new-event-id" placeholder="Event ID">
+                <input type="text" class="input-field" id="new-event-match" placeholder="Match name">
+                <input type="text" class="input-field" id="new-event-stadium" placeholder="Stadium">
+                <input type="number" class="input-field" id="new-event-capacity" placeholder="Capacity" min="1">
+                <input type="datetime-local" class="input-field" id="new-event-start" placeholder="Start time">
+                <select class="input-select" id="new-event-status" aria-label="Event status">
+                    <option value="OPEN">OPEN</option>
+                    <option value="UPCOMING">UPCOMING</option>
+                    <option value="CLOSED">CLOSED</option>
+                    <option value="FINISHED">FINISHED</option>
+                </select>
+                <button class="btn btn-primary" onclick="adminCreateEvent()" id="btn-admin-create-event">Add Event</button>
+            </div>
+        </div>
+
         <!-- Admin: Request Table -->
         <div class="glass-card table-card">
             <div class="table-header">
@@ -182,6 +202,7 @@
                     <button class="filter-chip" data-filter="ADMITTED" onclick="filterAdminTable('ADMITTED', this)" id="filter-admitted">Admitted</button>
                     <button class="filter-chip" data-filter="CANCELLED" onclick="filterAdminTable('CANCELLED', this)" id="filter-cancelled">Cancelled</button>
                     <button class="filter-chip" data-filter="EXPIRED" onclick="filterAdminTable('EXPIRED', this)" id="filter-expired">Expired</button>
+                    <button class="filter-chip" data-filter="REGISTRATION_CLOSED" onclick="filterAdminTable('REGISTRATION_CLOSED', this)" id="filter-registration-closed">Closed</button>
                 </div>
             </div>
             <div class="table-wrapper">

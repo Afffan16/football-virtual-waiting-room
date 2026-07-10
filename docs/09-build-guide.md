@@ -55,7 +55,7 @@ For the current authoritative state of the project, see [`00-project-status.md`]
 
 | Category | Choice |
 |---|---|
-| **Language** | Python 3.12 |
+| **Language** | Python 3.14 |
 | **Infrastructure** | AWS SAM, CloudFormation |
 | **Cloud Services** | Amazon DynamoDB, AWS Lambda, Amazon API Gateway, Amazon CloudWatch, AWS IAM, DynamoDB Streams |
 | **Frontend** | Static HTML/CSS/JS SPA |
@@ -88,7 +88,7 @@ flowchart TD
 
 | Risk | Mitigation |
 |---|---|
-| Duplicate registrations | Conditional writes (`attribute_not_exists`) |
+| Duplicate registrations | Transactional per-user registration guards |
 | Invalid input | Per-endpoint validation + length caps |
 | Admin endpoint abuse | `x-admin-api-key` header + server-side check |
 | DynamoDB throttling | On-Demand capacity mode |
@@ -104,7 +104,7 @@ flowchart TD
 
 | Tool | Purpose |
 |---|---|
-| Python 3.12 | Lambda runtime |
+| Python 3.14 | Lambda runtime |
 | Git | Version control |
 | AWS CLI v2 | AWS account interaction |
 | AWS SAM CLI | Build, package, and deploy the stack |
@@ -135,7 +135,7 @@ aws sts get-caller-identity
 mkdir football-waiting-room
 cd football-waiting-room
 git init
-sam init   # Python 3.12, Zip, Hello World starter — replaced in later steps
+sam init   # Python 3.14, Zip, Hello World starter — replaced in later steps
 ```
 
 ---
@@ -151,7 +151,7 @@ diagrams/   events/     tests/
 
 ## Step 5 — Configure the SAM Template
 
-`template.yaml` defines every AWS resource as code: the DynamoDB table (with GSIs, TTL, and Streams), all seven Lambda functions, API Gateway routes, throttling, IAM roles, and stack outputs. Includes the `AdminApiKey` parameter for securing `POST /queue/admit`.
+`template.yaml` defines every AWS resource as code: the DynamoDB table (with GSIs, TTL, and Streams), all ten Lambda functions, API Gateway routes, throttling, IAM roles, transaction-write permissions, and stack outputs. It includes demo admin credential parameters plus `AdminApiKey` for the production admin path.
 
 ```bash
 sam validate
@@ -190,9 +190,9 @@ Confirm the deployed table matches the schema in [`05-table-schema.md`](05-table
 | File | Contents |
 |---|---|
 | `constants.py` | App-wide constants, prefixes, status enums |
-| `models.py` | Dataclass models for all 6 entity types |
+| `models.py` | Dataclass models for all current entity types |
 | `utils.py` | Request parsing, validation, timestamps, ID generation |
-| `dynamodb.py` | DynamoDB helper functions (get, put, query, update, atomic increment) |
+| `dynamodb.py` | DynamoDB helper functions (get, put, query, update, transactions, sharded counters) |
 | `logger.py` | Structured JSON logging via Lambda Powertools |
 | `responses.py` | Standard HTTP response builders with CORS headers |
 
@@ -200,7 +200,7 @@ Confirm the deployed table matches the schema in [`05-table-schema.md`](05-table
 
 ## Step 9 — Join Queue Lambda
 
-Implements AP-01 (access pattern from [`03-access-patterns.md`](03-access-patterns.md)): validates request, checks for duplicate via GSI1, generates a timestamp-based queue position, writes with a conditional expression, returns HTTP 201.
+Implements AP-01 (access pattern from [`03-access-patterns.md`](03-access-patterns.md)): validates request, checks event capacity/status, generates a timestamp-based queue position, writes a registration guard and queue row in one transaction, then increments sharded stats.
 
 ```bash
 sam local invoke JoinQueueFunction --event events/join_queue.json
@@ -210,7 +210,7 @@ sam local invoke JoinQueueFunction --event events/join_queue.json
 
 ## Step 10 — Queue Status Lambda
 
-Implements AP-02: queries GSI1 by user+event, returns position and estimated wait. Highest-traffic endpoint — tested for latency early.
+Implements AP-02: reads the user/event registration guard, follows it to the queue row, and returns position and estimated wait. Highest-traffic endpoint — tested for latency early.
 
 ---
 
@@ -228,7 +228,7 @@ Implements AP-06: `GetItem` by token, checks status is `ACTIVE` and epoch hasn't
 
 ## Step 13 — Event Lookup Lambda
 
-Implements AP-03: `GetItem` for event metadata. Also used by the frontend to enrich event cards with live status.
+Implements AP-03: `GetItem` for event metadata. `GET /events` lists the DynamoDB-backed catalog, and `POST /event` lets admins create event metadata plus stats together.
 
 ---
 
@@ -240,9 +240,9 @@ Implements AP-04 and AP-05: queries GSI3 for WAITING users ordered by position, 
 
 ## Step 15 — Security Hardening
 
-- `admit_users`: added `_is_admin_authorized()` — reads `ADMIN_API_KEY` env var, checks `x-admin-api-key` header with `hmac.compare_digest`
+- Admin endpoints: added `_is_admin_authorized()` style checks for demo dashboard headers and `x-admin-api-key`
 - `join_queue`, `leave_queue`, `queue_status`: added input length validation (`eventId ≤ 64`, `userId ≤ 128`)
-- `template.yaml`: added API Gateway throttling (200 req/s, 500 burst), Usage Plan, API Key resource
+- `template.yaml`: added API Gateway throttling (5,000 req/s, 2,000 burst), Usage Plan, API Key resource, and explicit transaction-write IAM grants
 
 ---
 
@@ -254,9 +254,9 @@ Three files created in `frontend/`:
 |---|---|
 | `index.html` | 4-page SPA structure (Home, Admin, Events, Event Detail) |
 | `styles.css` | Glassmorphism dark theme, particle canvas, responsive grid, status badges |
-| `app.js` | SPA router, all 7 API endpoints, admin key header, toast notifications |
+| `app.js` | SPA router, current API endpoints, demo admin login headers, toast notifications |
 
-Events catalog hardcoded to match `scripts/seed_data.py` (events 1001–1006).
+Events load from `GET /events`, with the original static catalog kept only as a fallback if the API is unavailable.
 
 ---
 
@@ -381,10 +381,10 @@ This section expands on Steps 15 and 16 above with the full implementation detai
 
 | Hardening | What changed | Where |
 |---|---|---|
-| Admin key check | `_is_admin_authorized()` reads `ADMIN_API_KEY` env var, checks `x-admin-api-key` header with `hmac.compare_digest` | `src/admit_users/app.py` |
+| Admin key check | Admin endpoints accept demo headers and the `x-admin-api-key` production path | `src/admit_users/app.py`, `src/admin_event/app.py`, `src/admin_queue_list/app.py` |
 | Input length caps | `eventId > 64` or `userId > 128` → 400 Bad Request | `join_queue`, `leave_queue`, `queue_status` |
 | Batch size cap | `batchSize` clamped to max 500 | `src/admit_users/app.py` |
-| API Gateway throttling | 200 req/s rate, 500 burst; Usage Plan + API Key resource | `template.yaml` |
+| API Gateway throttling | 5,000 req/s rate, 2,000 burst; Usage Plan + API Key resource | `template.yaml` |
 | SAM parameter | `AdminApiKey` (`NoEcho: true`) injected as `ADMIN_API_KEY` env var | `template.yaml` |
 | Frontend header | `x-admin-api-key` sent on `/queue/admit` calls when `ADMIN_API_KEY` constant is set | `frontend/app.js` |
 
@@ -428,7 +428,7 @@ python scripts/mass_ticket_requests.py --total 1000000                 # full 1M
 
 | Item | Note |
 |---|---|
-| Events catalog hardcoded in `app.js` | Matches `seed_data.py`. Production would fetch from a `GET /events` endpoint. |
+| Events catalog fallback in `app.js` | Used only when `GET /events` is unavailable. |
 | Admin table shows synthetic data | No `GET /queue/entries` endpoint exists; table generates representative display data from stats counters. |
 | `ADMIN_API_KEY` in `app.js` | Demo convenience only. Production: use a server-side session or separate admin auth, not a client-side constant. |
 | `userId` is caller-supplied | No user authentication — anyone can supply any userId. Production: tie to Cognito via Lambda Authorizer. |

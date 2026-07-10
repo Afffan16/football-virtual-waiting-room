@@ -16,12 +16,14 @@ sys.path.append("src")
 
 from common.constants import (
     ENTITY_QUEUE,
+    ENTITY_QUEUE_REGISTRATION,
     EVENT_PREFIX,
     GSI1PK,
     GSI1SK,
     GSI3PK,
     GSI3SK,
     QUEUE_PREFIX,
+    QUEUE_REGISTRATION_PREFIX,
     STATS_SK,
     STATUS_WAITING,
     TABLE_NAME,
@@ -71,21 +73,36 @@ def generate_users(count: int, event_id: str = "1001") -> None:
             GSI3PK: f"{EVENT_PREFIX}{event_id}",
             GSI3SK: f"STATUS#{STATUS_WAITING}#{padded}",
         }
+        registration_item: dict[str, Any] = {
+            "PK": f"{USER_PREFIX}{user_id}",
+            "SK": f"{QUEUE_REGISTRATION_PREFIX}{event_id}",
+            "entityType": ENTITY_QUEUE_REGISTRATION,
+            "eventId": event_id,
+            "userId": user_id,
+            "queuePosition": padded,
+            "queuePK": queue_item["PK"],
+            "queueSK": queue_item["SK"],
+            "status": STATUS_WAITING,
+            "estimatedWait": estimated_wait,
+            "createdAt": now,
+            "updatedAt": now,
+        }
 
         batch_items.append(queue_item)
+        batch_items.append(registration_item)
 
         # Write in batches of 25
-        if len(batch_items) == 25:
+        if len(batch_items) >= 24:
             write_batch(table, batch_items)
-            # Increment waitingUsers stats counter
-            atomic_increment(stats_pk, STATS_SK, "waitingUsers", increment=25)
+            # Increment waitingUsers stats counter by queue rows, not guard rows.
+            atomic_increment(stats_pk, STATS_SK, "waitingUsers", increment=len(batch_items) // 2)
             print(f"Registered {i} / {count} users...")
             batch_items = []
 
     # Write remaining
     if batch_items:
         write_batch(table, batch_items)
-        atomic_increment(stats_pk, STATS_SK, "waitingUsers", increment=len(batch_items))
+        atomic_increment(stats_pk, STATS_SK, "waitingUsers", increment=len(batch_items) // 2)
         print(f"Registered {count} / {count} users...")
 
     print(f"\nSuccessfully generated {count} test users in the queue! 🚀")

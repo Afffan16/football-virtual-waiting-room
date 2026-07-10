@@ -115,6 +115,7 @@ def seed_database() -> None:
             "expiredUsers": 0,
             "cancelledUsers": 0,
             "completedUsers": 0,
+            "closedUsers": 0,
             "totalUsers": 0,
             "avgWaitTime": 0,
             "currentlyServingPosition": "",

@@ -9,6 +9,7 @@ error handling and structured logging.
 from __future__ import annotations
 
 import hashlib
+from datetime import UTC, datetime
 from typing import Any, Optional
 
 import boto3
@@ -17,15 +18,22 @@ from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from common.constants import (
+    ENTITY_EVENT,
     ENTITY_STATS,
+    EVENT_CLOSED,
     EVENT_PREFIX,
+    GSI1PK,
+    GSI1SK,
     GSI1_NAME,
     GSI3_NAME,
     METADATA_SK,
     QUEUE_PREFIX,
+    QUEUE_REGISTRATION_PREFIX,
     STATS_SHARD_COUNT,
     STATS_SHARD_PREFIX,
     STATS_SK,
+    STATUS_REGISTRATION_CLOSED,
+    STATUS_WAITING,
     TABLE_NAME,
     TOKEN_PREFIX,
     USER_PREFIX,
@@ -86,7 +94,7 @@ def transact_put_items(items: list[tuple[dict[str, Any], str | None]]) -> bool:
     Returns ``False`` when a transaction is cancelled by a conditional check,
     and raises for other DynamoDB errors.
     """
-    def _build_transact_items(serialize: bool) -> list[dict[str, Any]]:
+    def _build_transact_items(serialize: bool = False) -> list[dict[str, Any]]:
         transact_items: list[dict[str, Any]] = []
         for item, condition_expression in items:
             request_item = (
@@ -103,25 +111,54 @@ def transact_put_items(items: list[tuple[dict[str, Any], str | None]]) -> bool:
             transact_items.append({"Put": put_request})
         return transact_items
 
-    def _is_moto_type_error(exc: ClientError) -> bool:
+    def _is_shape_error(exc: ClientError) -> bool:
+        message = exc.response.get("Error", {}).get("Message", "")
         reasons = exc.response.get("CancellationReasons", [])
-        return any(reason.get("Code") == "TypeError" for reason in reasons)
+        reason_messages = " ".join(reason.get("Message", "") for reason in reasons)
+        return (
+            any(reason.get("Code") in {"TypeError", "ValidationError"} for reason in reasons)
+            and (
+                "Type mismatch" in reason_messages
+                or "parameter values were invalid" in reason_messages
+                or "Parameter validation failed" in message
+            )
+        )
+
+    def _is_conditional_cancellation(exc: ClientError) -> bool:
+        reasons = exc.response.get("CancellationReasons", [])
+        reason_codes = [
+            reason.get("Code")
+            for reason in reasons
+            if reason.get("Code") and reason.get("Code") != "None"
+        ]
+        if reason_codes:
+            return all(code == "ConditionalCheckFailed" for code in reason_codes)
+
+        message = exc.response.get("Error", {}).get("Message", "")
+        return "ConditionalCheckFailed" in message
 
     try:
-        _table.meta.client.transact_write_items(TransactItems=_build_transact_items(serialize=True))
+        # The DynamoDB resource's client applies the same document
+        # transformation as table operations. Send plain Python values here;
+        # pre-serializing turns key values into maps and causes ValidationError.
+        _table.meta.client.transact_write_items(TransactItems=_build_transact_items())
         return True
     except ClientError as exc:
-        if exc.response["Error"]["Code"] == "TransactionCanceledException" and _is_moto_type_error(exc):
-            # moto currently expects plain resource-style items for transaction
-            # writes, while the real DynamoDB client expects serialized values.
+        if exc.response["Error"]["Code"] == "TransactionCanceledException" and _is_shape_error(exc):
             try:
-                _table.meta.client.transact_write_items(TransactItems=_build_transact_items(serialize=False))
+                _table.meta.client.transact_write_items(TransactItems=_build_transact_items(serialize=True))
                 return True
             except ClientError as retry_exc:
                 exc = retry_exc
 
-        if exc.response["Error"]["Code"] == "TransactionCanceledException":
-            logger.info("DynamoDB transact_put_items cancelled.")
+        if (
+            exc.response["Error"]["Code"] == "TransactionCanceledException"
+            and _is_conditional_cancellation(exc)
+        ):
+            logger.info(
+                "DynamoDB transact_put_items cancelled by conditional check.",
+                extra={"cancellationReasons": exc.response.get("CancellationReasons", [])},
+            )
             return False
         logger.exception("DynamoDB transact_put_items error")
         raise
@@ -136,6 +173,16 @@ def get_item(pk: str, sk: str) -> Optional[dict[str, Any]]:
         return response.get("Item")
     except ClientError:
         logger.exception("DynamoDB get_item error")
+        raise
+
+
+def delete_item(pk: str, sk: str) -> bool:
+    """Delete a single item by primary key."""
+    try:
+        _table.delete_item(Key={"PK": pk, "SK": sk})
+        return True
+    except ClientError:
+        logger.exception("DynamoDB delete_item error")
         raise
 
 
@@ -164,6 +211,34 @@ def query_items(
         return response.get("Items", [])
     except ClientError:
         logger.exception("DynamoDB query error")
+        raise
+
+
+def scan_items(
+    filter_expression: Any = None,
+    projection_expression: str | None = None,
+    expression_names: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Scan the table and return all matching items."""
+    try:
+        kwargs: dict[str, Any] = {}
+        if filter_expression is not None:
+            kwargs["FilterExpression"] = filter_expression
+        if projection_expression:
+            kwargs["ProjectionExpression"] = projection_expression
+        if expression_names:
+            kwargs["ExpressionAttributeNames"] = expression_names
+
+        items: list[dict[str, Any]] = []
+        while True:
+            response = _table.scan(**kwargs)
+            items.extend(response.get("Items", []))
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                return items
+            kwargs["ExclusiveStartKey"] = last_key
+    except ClientError:
+        logger.exception("DynamoDB scan error")
         raise
 
 
@@ -278,6 +353,16 @@ def get_event(event_id: str) -> Optional[dict[str, Any]]:
     return get_item(f"{EVENT_PREFIX}{event_id}", METADATA_SK)
 
 
+def list_events() -> list[dict[str, Any]]:
+    """Return all event metadata records."""
+    from boto3.dynamodb.conditions import Attr
+
+    return sorted(
+        scan_items(filter_expression=Attr("entityType").eq(ENTITY_EVENT)),
+        key=lambda item: item.get("startTime", ""),
+    )
+
+
 def get_event_stats(event_id: str) -> Optional[dict[str, Any]]:
     """Retrieve aggregate queue statistics for an event.
 
@@ -305,6 +390,7 @@ def get_event_stats(event_id: str) -> Optional[dict[str, Any]]:
         "completedUsers",
         "totalUsers",
         "avgWaitTime",
+        "closedUsers",
     ):
         stats[attr] = int(base.get(attr, 0))
 
@@ -316,6 +402,7 @@ def get_event_stats(event_id: str) -> Optional[dict[str, Any]]:
             "cancelledUsers",
             "completedUsers",
             "totalUsers",
+            "closedUsers",
         ):
             stats[attr] += int(item.get(attr, 0))
 
@@ -328,16 +415,19 @@ def get_token(token_id: str) -> Optional[dict[str, Any]]:
 
 
 def query_user_queue(user_id: str, event_id: str) -> Optional[dict[str, Any]]:
-    """Look up a user's queue entry via GSI1."""
-    from boto3.dynamodb.conditions import Key
+    """Look up a user's active queue entry through the registration guard."""
+    registration = get_item(f"{USER_PREFIX}{user_id}", f"{QUEUE_REGISTRATION_PREFIX}{event_id}")
+    if not registration:
+        return None
 
-    items = query_items(
-        key_condition=Key("GSI1PK").eq(f"{USER_PREFIX}{user_id}")
-        & Key("GSI1SK").eq(f"{EVENT_PREFIX}{event_id}"),
-        index_name=GSI1_NAME,
-        limit=1,
-    )
-    return items[0] if items else None
+    queue_pk = registration.get("queuePK")
+    queue_sk = registration.get("queueSK")
+    if queue_pk and queue_sk:
+        queue_item = get_item(queue_pk, queue_sk)
+        if queue_item:
+            return queue_item
+
+    return registration
 
 
 def query_waiting_users(
@@ -380,3 +470,77 @@ def query_queue_entries(
         index_name=GSI3_NAME,
         limit=limit,
     )
+
+
+def close_waiting_registrations(event_id: str, max_items: int = 100000) -> int:
+    """Mark waiting queue entries as closed when no more registration slots remain."""
+    closed_count = 0
+    now = datetime.now(UTC).isoformat()
+
+    while closed_count < max_items:
+        waiting_items = query_queue_entries(
+            event_id,
+            status=STATUS_WAITING,
+            limit=min(500, max_items - closed_count),
+        )
+        if not waiting_items:
+            break
+
+        changed_this_page = 0
+        for item in waiting_items:
+            queue_position = item.get("queuePosition", "")
+            user_id = item.get("userId", "")
+            if not queue_position or not user_id:
+                continue
+
+            updated = update_item(
+                pk=f"{EVENT_PREFIX}{event_id}",
+                sk=f"{QUEUE_PREFIX}{queue_position}",
+                update_expression=(
+                    "SET #status = :new_status, updatedAt = :now, GSI3SK = :gsi3sk "
+                    "REMOVE #gsi1pk, #gsi1sk"
+                ),
+                expression_values={
+                    ":new_status": STATUS_REGISTRATION_CLOSED,
+                    ":now": now,
+                    ":current_status": STATUS_WAITING,
+                    ":gsi3sk": f"STATUS#{STATUS_REGISTRATION_CLOSED}#{queue_position}",
+                },
+                expression_names={
+                    "#status": "status",
+                    "#gsi1pk": GSI1PK,
+                    "#gsi1sk": GSI1SK,
+                },
+                condition_expression="#status = :current_status",
+            )
+            if not updated:
+                continue
+
+            update_item(
+                pk=f"{USER_PREFIX}{user_id}",
+                sk=f"{QUEUE_REGISTRATION_PREFIX}{event_id}",
+                update_expression="SET #status = :new_status, updatedAt = :now",
+                expression_values={":new_status": STATUS_REGISTRATION_CLOSED, ":now": now},
+                expression_names={"#status": "status"},
+            )
+            closed_count += 1
+            changed_this_page += 1
+
+        if changed_this_page == 0:
+            break
+
+    if closed_count:
+        increment_stats(
+            event_id,
+            {"waitingUsers": -closed_count, "closedUsers": closed_count},
+            shard_seed=f"closed#{event_id}",
+        )
+
+    update_item(
+        pk=f"{EVENT_PREFIX}{event_id}",
+        sk=METADATA_SK,
+        update_expression="SET #status = :status, updatedAt = :now",
+        expression_values={":status": EVENT_CLOSED, ":now": now},
+        expression_names={"#status": "status"},
+    )
+    return closed_count

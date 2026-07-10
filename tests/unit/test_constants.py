@@ -37,6 +37,7 @@ from common.constants import (
     STATUS_CANCELLED,
     STATUS_COMPLETED,
     STATUS_EXPIRED,
+    STATUS_REGISTRATION_CLOSED,
     STATUS_WAITING,
     TABLE_NAME,
     TOKEN_ACTIVE,
@@ -106,7 +107,8 @@ class TestStatusValues:
         assert STATUS_COMPLETED in VALID_QUEUE_STATUSES
         assert STATUS_EXPIRED in VALID_QUEUE_STATUSES
         assert STATUS_CANCELLED in VALID_QUEUE_STATUSES
-        assert len(VALID_QUEUE_STATUSES) == 5
+        assert STATUS_REGISTRATION_CLOSED in VALID_QUEUE_STATUSES
+        assert len(VALID_QUEUE_STATUSES) == 6
 
     def test_token_statuses(self) -> None:
         assert TOKEN_ACTIVE == "ACTIVE"

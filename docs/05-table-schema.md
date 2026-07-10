@@ -27,7 +27,7 @@
 
 This document defines the **physical** DynamoDB table used by the Football Virtual Waiting Room — the concrete implementation of the logical model from [`04-data-model.md`](04-data-model.md).
 
-The solution follows a **Single Table Design**, storing all application entities in one table while differentiating them using structured partition keys, sort keys, and item attributes. The schema is optimized for the access patterns identified in [`03-access-patterns.md`](03-access-patterns.md) and leaves room for future horizontal scaling techniques such as write sharding.
+The solution follows a **Single Table Design**, storing all application entities in one table while differentiating them using structured partition keys, sort keys, and item attributes. The schema is optimized for the access patterns identified in [`03-access-patterns.md`](03-access-patterns.md) and includes the current write-sharding and registration-guard patterns used by the deployed Lambdas.
 
 ---
 
@@ -35,7 +35,7 @@ The solution follows a **Single Table Design**, storing all application entities
 
 | Property | Value |
 |---|---|
-| Table Name | `FootballWaitingRoom` |
+| Table Name | CloudFormation-managed table, exported as `FootballWaitingRoomTableName` |
 | Billing Mode | On-Demand (`PAY_PER_REQUEST`) |
 | Primary Key | `PK` + `SK` |
 | Streams | Enabled (`NEW_AND_OLD_IMAGES`) |
@@ -63,7 +63,8 @@ Every key follows a predictable prefix strategy, so multiple entity types can sh
 ```
 EVENT#1001
 USER#501
-QUEUE#501
+QUEUE#EVENT#1001
+QUEUE#2026-07-10T18:01:22.123456Z#8f4a
 TOKEN#ABC123
 SESSION#XYZ
 STATS
@@ -89,21 +90,36 @@ STATS
 | `startTime` | Match start |
 | `status` | Event status |
 
+### Queue Registration Guard
+
+| | |
+|---|---|
+| **PK** | `USER#501` |
+| **SK** | `QUEUE#EVENT#1001` |
+
+| Attribute | Description |
+|---|---|
+| `eventId` | Event registered for |
+| `userId` | User identifier |
+| `queuePK` | Physical queue row partition key |
+| `queueSK` | Physical queue row sort key |
+| `status` | Active registration status |
+
 ### Queue Entry
 
 | | |
 |---|---|
 | **PK** | `EVENT#1001` |
-| **SK** | `QUEUE#00000123` |
+| **SK** | `QUEUE#2026-07-10T18:01:22.123456Z#8f4a` |
 
 | Attribute | Description |
 |---|---|
 | `userId` | User |
 | `queuePosition` | Immutable queue position |
 | `joinTime` | Registration time |
-| `status` | `WAITING` / `ADMITTED` / `COMPLETED` |
+| `status` | `WAITING` / `ADMITTED` / `COMPLETED` / `CANCELLED` / `EXPIRED` / `REGISTRATION_CLOSED` |
 | `estimatedWait` | Estimated wait |
-| `shardId` | Optional future optimization |
+| `shardId` | Stats shard used for high-write events |
 
 ### User Item
 
@@ -160,6 +176,7 @@ STATS
 | `waitingUsers` | Current queue size |
 | `admittedUsers` | Users admitted |
 | `expiredUsers` | Expired sessions |
+| `closedUsers` | Users closed when capacity is full |
 | `avgWaitTime` | Average wait |
 
 ---
@@ -182,7 +199,7 @@ Some attributes appear across multiple item types:
 
 | Domain | Values |
 |---|---|
-| **Queue Status** | `WAITING` · `ADMITTED` · `COMPLETED` · `EXPIRED` · `CANCELLED` |
+| **Queue Status** | `WAITING` · `ADMITTED` · `COMPLETED` · `EXPIRED` · `CANCELLED` · `REGISTRATION_CLOSED` |
 | **Token Status** | `ACTIVE` · `USED` · `EXPIRED` |
 | **Event Status** | `UPCOMING` · `OPEN` · `CLOSED` · `FINISHED` |
 
@@ -216,7 +233,7 @@ Some attributes appear across multiple item types:
 // Queue Entry
 {
   "PK": "EVENT#1001",
-  "SK": "QUEUE#00000123",
+  "SK": "QUEUE#2026-07-10T18:01:22.123456Z#8f4a",
   "entityType": "QUEUE",
   "userId": "501",
   "queuePosition": 123,

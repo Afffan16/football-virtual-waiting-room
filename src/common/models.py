@@ -241,6 +241,7 @@ class QueueStats:
     expired_users: int = 0
     cancelled_users: int = 0
     completed_users: int = 0
+    closed_users: int = 0
     total_users: int = 0
     avg_wait_time: int = 0
 
@@ -256,6 +257,7 @@ class QueueStats:
             "expiredUsers": self.expired_users,
             "cancelledUsers": self.cancelled_users,
             "completedUsers": self.completed_users,
+            "closedUsers": self.closed_users,
             "totalUsers": self.total_users,
             "avgWaitTime": self.avg_wait_time,
         }
@@ -270,6 +272,7 @@ class QueueStats:
             expired_users=int(item.get("expiredUsers", 0)),
             cancelled_users=int(item.get("cancelledUsers", 0)),
             completed_users=int(item.get("completedUsers", 0)),
+            closed_users=int(item.get("closedUsers", 0)),
             total_users=int(item.get("totalUsers", 0)),
             avg_wait_time=int(item.get("avgWaitTime", 0)),
         )
@@ -283,6 +286,7 @@ class QueueStats:
             "expiredUsers": self.expired_users,
             "cancelledUsers": self.cancelled_users,
             "completedUsers": self.completed_users,
+            "closedUsers": self.closed_users,
             "totalUsers": self.total_users,
             "averageWaitMinutes": self.avg_wait_time,
         }

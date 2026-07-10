@@ -45,7 +45,8 @@ It was built for the **AWS Builder Center DynamoDB Data Modeling Challenge**, so
 - 🔑 Issues short-lived admission tokens
 - ⏳ Auto-expires idle sessions & tokens (TTL)
 - 📊 Serves real-time queue statistics
-- 🛡️ Admin endpoint protected by API key auth
+- 🗂️ Serves a DynamoDB-backed event catalog
+- 🛡️ Admin event, admit, and queue-list endpoints protected by demo admin headers or API key auth
 
 </td>
 <td width="50%" valign="top">
@@ -72,8 +73,8 @@ A glassmorphism dark-themed **Single Page Application** with four views:
 | View | Description |
 |---|---|
 | **Home** | Role selection (Admin / User), live stats bar |
-| **Admin Dashboard** | Batch admit controls, live queue stats, request table with filters, activity log |
-| **Events List** | Grid of 6 football events with live status badges |
+| **Admin Dashboard** | Add-event form, batch admit controls, live queue stats, real queue table with filters, activity log |
+| **Events List** | Event grid loaded from DynamoDB, with the seeded catalog as fallback |
 | **Event Detail** | Join queue, check status, leave queue — full user workflow |
 
 Files: `frontend/index.html`, `frontend/styles.css`, `frontend/app.js`
@@ -97,15 +98,18 @@ flowchart TD
     APIGW --> L5["λ Validate Token"]
     APIGW --> L6["λ Event Lookup"]
     APIGW --> L7["λ Statistics"]
+    APIGW --> L8["λ Events List"]
+    APIGW --> L9["λ Admin Event Create 🔐"]
+    APIGW --> L10["λ Admin Queue List 🔐"]
 
-    L1 & L2 & L3 & L4 & L5 & L6 & L7 --> DDB[("🗄️ Amazon DynamoDB\nSingle Table Design\nOn-Demand Capacity")]
+    L1 & L2 & L3 & L4 & L5 & L6 & L7 & L8 & L9 & L10 --> DDB[("🗄️ Amazon DynamoDB\nSingle Table Design\nOn-Demand Capacity")]
 
     DDB -.-> GSI1["GSI1\nUser → Queue Lookup"]
     DDB -.-> GSI2["GSI2\nToken Validation"]
     DDB -.-> GSI3["GSI3\nAdmin Queue View"]
     DDB --> Streams["DynamoDB Streams"]
 
-    L1 & L2 & L3 & L4 & L5 & L6 & L7 --> CW["📈 Amazon CloudWatch\nLogs · Metrics · Alarms"]
+    L1 & L2 & L3 & L4 & L5 & L6 & L7 & L8 & L9 & L10 --> CW["📈 Amazon CloudWatch\nLogs · Metrics · Alarms"]
 
     style DDB fill:#4053D6,color:#fff
     style APIGW fill:#FF9900,color:#fff
@@ -123,6 +127,7 @@ stateDiagram-v2
     WAITING --> ADMITTED: Batch admission (POST /queue/admit)
     WAITING --> EXPIRED: TTL timeout (inactivity)
     WAITING --> CANCELLED: POST /queue/leave
+    WAITING --> REGISTRATION_CLOSED: Capacity closed
     ADMITTED --> COMPLETED: Ticket checkout finished
     COMPLETED --> [*]
     EXPIRED --> [*]
@@ -144,6 +149,7 @@ The entire application lives in **one DynamoDB table** (`FootballWaitingRoom`), 
 |---|---|---|---|
 | Event | `EVENT#<id>` | `METADATA` | Match metadata (stadium, capacity, status) |
 | Queue Entry | `EVENT#<id>` | `QUEUE#<position>` | A user's place in an event's queue |
+| Queue Registration | `USER#<id>` | `QUEUE#EVENT#<eventId>` | Active per-user event guard |
 | User | `USER#<id>` | `PROFILE` | Customer profile |
 | Session | `USER#<id>` | `SESSION#ACTIVE` | Active waiting-room session (TTL) |
 | Admission Token | `TOKEN#<id>` | `METADATA` | Short-lived checkout token (TTL) |
@@ -172,12 +178,15 @@ Base URL: `https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod`
 | `POST` | `/queue/join` | Join the waiting room for an event | — |
 | `GET` | `/queue/status` | Get live position & estimated wait | — |
 | `POST` | `/queue/leave` | Voluntarily leave the queue | — |
-| `POST` | `/queue/admit` | *(Admin)* Admit the next batch | `x-admin-api-key` header |
+| `POST` | `/queue/admit` | *(Admin)* Admit the next batch | Demo admin headers or `x-admin-api-key` |
+| `GET` | `/queue/admin/list` | *(Admin)* List real queue entries | Demo admin headers or `x-admin-api-key` |
 | `POST` | `/token/validate` | Validate an admission token before checkout | — |
+| `GET` | `/events` | List all event metadata | — |
 | `GET` | `/event/{eventId}` | Fetch match metadata | — |
+| `POST` | `/event` | *(Admin)* Create an event and stats row | Demo admin headers or `x-admin-api-key` |
 | `GET` | `/event/{eventId}/stats` | Real-time queue statistics | — |
 
-> 🔐 `POST /queue/admit` requires the `x-admin-api-key` header. Requests without it return `403 Forbidden`. The key is set at deploy time via the `AdminApiKey` SAM parameter.
+> 🔐 Admin endpoints accept the demo dashboard headers (`x-admin-email`, `x-admin-password`) and still support `x-admin-api-key` as the production path. Requests without valid admin credentials return `403 Forbidden`.
 
 <details>
 <summary><b>Example — join the queue</b></summary>
@@ -231,14 +240,14 @@ Full endpoint contracts, validation rules, and error schemas: [`docs/08-api-desi
 
 | Measure | Detail |
 |---|---|
-| Admin endpoint protection | `POST /queue/admit` requires `x-admin-api-key` header — verified server-side with `hmac.compare_digest` |
+| Admin endpoint protection | Admin routes accept demo admin headers or `x-admin-api-key` — verified server-side with `hmac.compare_digest` |
 | Input validation | All endpoints validate required fields and reject inputs exceeding length limits |
 | Batch size cap | `/queue/admit` caps `batchSize` at 500 to limit per-call DynamoDB write cost |
-| IAM least privilege | Read-only Lambdas: `DynamoDBReadPolicy`. Write Lambdas: `DynamoDBCrudPolicy` |
-| Throttling | API Gateway stage throttling: 200 req/s rate, 500 burst |
+| IAM least privilege | Read-only Lambdas: `DynamoDBReadPolicy`. Write Lambdas: `DynamoDBCrudPolicy`; transaction writers also grant `dynamodb:TransactWriteItems` |
+| Throttling | API Gateway stage throttling and usage plan tuned for controlled load tests |
 | Encryption | DynamoDB SSE enabled; all traffic over HTTPS |
 | Token expiration | Admission tokens enforced at runtime (status + epoch check) |
-| Admin key management | Set via `AdminApiKey` SAM parameter (`NoEcho: true`) — never in source code |
+| Admin credential management | Demo credentials are used by the static dashboard; production should use Cognito, a Lambda Authorizer, or Secrets Manager |
 
 > For a production deployment, move `AdminApiKey` to AWS Secrets Manager and add a Lambda Authorizer or Cognito for user identity. See [`docs/13-deployment-guide.md`](docs/13-deployment-guide.md#production-considerations).
 
@@ -276,6 +285,9 @@ football-virtual-waiting-room/
 │   ├── admit_users/        # 🔐 Admin-protected endpoint
 │   ├── validate_token/
 │   ├── event_lookup/
+│   ├── events/
+│   ├── admin_event/
+│   ├── admin_queue_list/
 │   └── statistics/
 ├── tests/
 │   ├── unit/
@@ -286,6 +298,7 @@ football-virtual-waiting-room/
 ├── scripts/
 │   ├── seed_data.py
 │   ├── generate_test_data.py
+│   ├── clear_event_records.py
 │   └── mass_ticket_requests.py   # 1M-request async load test
 ├── postman/                # API collection + environment
 ├── template.yaml           # AWS SAM infrastructure definition
@@ -335,7 +348,7 @@ python scripts/seed_data.py
 
 ### 5. Open the frontend
 
-Edit `frontend/app.js` — set `API_BASE` to your deployed API URL and `ADMIN_API_KEY` to your admin key. Then open `frontend/index.html` in a browser.
+Edit `frontend/app.js` — set `API_BASE` to your deployed API URL. Then open `frontend/index.html` in a browser. The demo admin login is `admin123@gmail.com` / `admin123`.
 
 ---
 

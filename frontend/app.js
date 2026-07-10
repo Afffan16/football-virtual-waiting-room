@@ -13,7 +13,7 @@ const ADMIN_LOGIN_EMAIL = "admin123@gmail.com";
 const ADMIN_LOGIN_PASSWORD = "admin123";
 
 // ---- Football events catalog (hardcoded for demo, matches seed_data.py) ----
-const EVENTS_CATALOG = [
+let EVENTS_CATALOG = [
     { eventId: "1001", matchName: "Manchester United vs Liverpool", stadium: "Old Trafford", capacity: 50000, startTime: "2026-07-12T15:00:00Z", status: "OPEN" },
     { eventId: "1002", matchName: "Portugal vs Argentina", stadium: "Estádio da Luz", capacity: 65000, startTime: "2026-07-15T20:00:00Z", status: "OPEN" },
     { eventId: "1003", matchName: "Real Madrid vs Barcelona", stadium: "Santiago Bernabéu", capacity: 81044, startTime: "2026-07-18T21:00:00Z", status: "OPEN" },
@@ -124,7 +124,10 @@ async function api(method, endpoint, body = null) {
     const headers = { "Content-Type": "application/json" };
 
     // Attach admin credentials for protected admin endpoints.
-    if ((endpoint.startsWith("/queue/admit") || endpoint.startsWith("/queue/admin")) && currentAdmin) {
+    if (
+        (endpoint.startsWith("/queue/admit") || endpoint.startsWith("/queue/admin") || endpoint === "/event")
+        && currentAdmin
+    ) {
         headers["x-admin-email"] = currentAdmin.email;
         headers["x-admin-password"] = currentAdmin.password;
     }
@@ -134,12 +137,54 @@ async function api(method, endpoint, body = null) {
 
     try {
         const res = await fetch(url, opts);
-        const data = await res.json();
+        const raw = await res.json().catch(() => ({}));
+        const data = normalizeApiPayload(raw);
+        if (!res.ok || raw.statusCode >= 400 || data.error) {
+            return {
+                error: getErrorMessage(data),
+                statusCode: res.status || raw.statusCode,
+                body: data,
+            };
+        }
         return data;
     } catch (err) {
         console.error(`API Error: ${method} ${endpoint}`, err);
         return { error: err.message };
     }
+}
+
+function normalizeApiPayload(raw) {
+    if (raw && typeof raw.body === "string") {
+        try {
+            return JSON.parse(raw.body);
+        } catch {
+            return { message: raw.body };
+        }
+    }
+    return raw || {};
+}
+
+function unwrapApiBody(payload) {
+    if (!payload) return {};
+    if (typeof payload.body === "string") {
+        try {
+            return JSON.parse(payload.body);
+        } catch {
+            return { message: payload.body };
+        }
+    }
+    if (payload.body && typeof payload.body === "object") {
+        return payload.body;
+    }
+    return payload;
+}
+
+function getErrorMessage(data) {
+    if (!data) return "Unknown error";
+    if (typeof data.error === "string") return data.error;
+    if (data.error?.message) return data.error.message;
+    if (data.message) return data.message;
+    return "Unknown error";
 }
 
 // ================================================================
@@ -245,10 +290,11 @@ function logoutAdmin() {
 // ================================================================
 
 async function loadHomeStats() {
+    await loadEventsCatalog();
     // Try loading stats for event 1001 as a default
     const data = await api("GET", "/event/1001/stats");
     if (data && !data.error) {
-        const body = data.body ? JSON.parse(data.body) : data;
+        const body = unwrapApiBody(data);
         document.getElementById("home-stat-events").textContent = EVENTS_CATALOG.length;
         document.getElementById("home-stat-queue").textContent = formatNumber(body.waitingUsers || 0);
         document.getElementById("home-stat-admitted").textContent = formatNumber(body.admittedUsers || 0);
@@ -259,12 +305,21 @@ async function loadHomeStats() {
     }
 }
 
+async function loadEventsCatalog() {
+    const data = await api("GET", "/events");
+    if (data && !data.error && Array.isArray(data.events) && data.events.length > 0) {
+        EVENTS_CATALOG = data.events;
+    }
+    return EVENTS_CATALOG;
+}
+
 // ================================================================
 // ADMIN PAGE
 // ================================================================
 
-function initAdminPage() {
+async function initAdminPage() {
     updateSessionPanels();
+    await loadEventsCatalog();
     // Populate event selector
     const select = document.getElementById("admin-event-select");
     select.innerHTML = `<option value="">— Choose an event —</option>` +
@@ -281,6 +336,51 @@ async function onAdminEventChange() {
     await refreshAdminData();
 }
 
+async function adminCreateEvent() {
+    const eventId = document.getElementById("new-event-id").value.trim();
+    const matchName = document.getElementById("new-event-match").value.trim();
+    const stadium = document.getElementById("new-event-stadium").value.trim();
+    const capacity = parseInt(document.getElementById("new-event-capacity").value, 10);
+    const startLocal = document.getElementById("new-event-start").value;
+    const status = document.getElementById("new-event-status").value;
+
+    if (!eventId || !matchName || !stadium || !capacity || !startLocal) {
+        showToast("Fill all event fields", "error");
+        return;
+    }
+
+    const btn = document.getElementById("btn-admin-create-event");
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner"></span> Adding...`;
+
+    const data = await api("POST", "/event", {
+        eventId,
+        matchName,
+        stadium,
+        capacity,
+        startTime: new Date(startLocal).toISOString(),
+        status,
+    });
+
+    btn.disabled = false;
+    btn.innerHTML = "Add Event";
+
+    if (data && !data.error) {
+        adminLog(`Created event ${eventId}: ${matchName}`);
+        showToast("Event created", "success");
+        ["new-event-id", "new-event-match", "new-event-stadium", "new-event-capacity", "new-event-start"].forEach(id => {
+            document.getElementById(id).value = "";
+        });
+        await loadEventsCatalog();
+        await initAdminPage();
+        document.getElementById("admin-event-select").value = eventId;
+        await refreshAdminData();
+    } else {
+        adminLog(`Create event failed: ${data.error || "Unknown error"}`);
+        showToast(data.error || "Failed to create event", "error");
+    }
+}
+
 async function refreshAdminData() {
     const eventId = document.getElementById("admin-event-select").value;
     if (!eventId) {
@@ -291,11 +391,11 @@ async function refreshAdminData() {
     // Load stats
     const statsData = await api("GET", `/event/${eventId}/stats`);
     if (statsData && !statsData.error) {
-        const stats = statsData.body ? JSON.parse(statsData.body) : statsData;
+        const stats = unwrapApiBody(statsData);
         document.getElementById("admin-stat-waiting").textContent = formatNumber(stats.waitingUsers || 0);
         document.getElementById("admin-stat-admitted").textContent = formatNumber(stats.admittedUsers || 0);
         document.getElementById("admin-stat-cancelled").textContent = formatNumber(stats.cancelledUsers || 0);
-        adminLog(`Stats refreshed — Waiting: ${stats.waitingUsers}, Admitted: ${stats.admittedUsers}, Cancelled: ${stats.cancelledUsers}`);
+        adminLog(`Stats refreshed - Waiting: ${stats.waitingUsers}, Admitted: ${stats.admittedUsers}, Cancelled: ${stats.cancelledUsers}, Closed: ${stats.closedUsers || 0}`);
     }
 
     // Load queue entries for the table — we query the admit endpoint with batchSize 0
@@ -318,7 +418,7 @@ async function loadAdminQueueEntries(eventId) {
     let entries = [];
 
     if (response && !response.error) {
-        const body = response.body ? JSON.parse(response.body) : response;
+        const body = unwrapApiBody(response);
         adminLog(`Queue peek complete — ${body.remainingQueue || 0} users in queue`);
 
         // We'll also generate display entries from any admitted user IDs
@@ -339,7 +439,7 @@ async function loadAdminQueueEntries(eventId) {
     // For demonstration purposes, create sample entries based on known stats
     const statsData = await api("GET", `/event/${eventId}/stats`);
     if (statsData && !statsData.error) {
-        const stats = statsData.body ? JSON.parse(statsData.body) : statsData;
+        const stats = unwrapApiBody(statsData);
         
         // Generate representative sample entries for display
         const totalDisplayEntries = Math.min(
@@ -451,7 +551,7 @@ async function adminAdmitCapacity() {
     btn.innerHTML = `⚡ Auto-Fill`;
 
     if (data && !data.error) {
-        const body = data.body ? JSON.parse(data.body) : data;
+        const body = unwrapApiBody(data);
         if (body.capacityFull) {
             adminLog(`✅ Capacity full — ${body.activePurchasers}/${body.purchasingCapacity} active purchasers. No new admissions needed.`);
             showToast(`Capacity full (${body.activePurchasers}/${body.purchasingCapacity})`, "info");
@@ -460,9 +560,9 @@ async function adminAdmitCapacity() {
             showToast(`Auto-filled ${body.admittedUsers || 0} slots to capacity!`, "success");
         }
     } else {
-        const errBody = data.body ? JSON.parse(data.body) : data;
-        adminLog(`❌ Auto-fill failed: ${errBody.message || errBody.error || 'Unknown error'}`);
-        showToast("Auto-fill failed", "error");
+        const errBody = unwrapApiBody(data);
+        adminLog(`Auto-fill failed: ${data.error || errBody.message || errBody.error || 'Unknown error'}`);
+        showToast(data.error || "Auto-fill failed", "error");
     }
 
     await refreshAdminData();
@@ -488,7 +588,7 @@ async function adminAdmitBatch() {
     btn.innerHTML = `✅ Admit Batch`;
 
     if (data && !data.error) {
-        const body = data.body ? JSON.parse(data.body) : data;
+        const body = unwrapApiBody(data);
         adminLog(`✅ Admitted ${body.admittedUsers || 0} users. Remaining: ${body.remainingQueue || 0}`);
         showToast(`Admitted ${body.admittedUsers || 0} users successfully!`, "success");
 
@@ -496,9 +596,9 @@ async function adminAdmitBatch() {
             adminLog(`   Admitted IDs: ${body.admittedUserIds.join(', ')}`);
         }
     } else {
-        const errBody = data.body ? JSON.parse(data.body) : data;
-        adminLog(`❌ Admission failed: ${errBody.message || errBody.error || 'Unknown error'}`);
-        showToast("Admission failed", "error");
+        const errBody = unwrapApiBody(data);
+        adminLog(`Admission failed: ${data.error || errBody.message || errBody.error || 'Unknown error'}`);
+        showToast(data.error || "Admission failed", "error");
     }
 
     // Refresh after admission
@@ -519,8 +619,9 @@ function clearAdminLog() {
 // EVENTS PAGE
 // ================================================================
 
-function renderEventsGrid() {
+async function renderEventsGrid() {
     updateSessionPanels();
+    await loadEventsCatalog();
     const grid = document.getElementById("events-grid");
 
     grid.innerHTML = EVENTS_CATALOG.map(evt => {
@@ -549,7 +650,7 @@ function renderEventsGrid() {
     EVENTS_CATALOG.forEach(async (evt) => {
         const liveData = await api("GET", `/event/${evt.eventId}`);
         if (liveData && !liveData.error) {
-            const body = liveData.body ? JSON.parse(liveData.body) : liveData;
+            const body = unwrapApiBody(liveData);
             if (body.status && body.status !== evt.status) {
                 const badge = document.querySelector(`#event-card-${evt.eventId} .event-card-badge`);
                 if (badge) {
@@ -607,14 +708,14 @@ async function userJoinQueue() {
     btn.innerHTML = "Join Queue";
 
     if (data && !data.error) {
-        const body = data.body ? JSON.parse(data.body) : data;
+        const body = unwrapApiBody(data);
         detailLog(`✅ ${body.message || 'Joined queue!'} Position: ${body.queuePosition}, Est. Wait: ${body.estimatedWaitMinutes} min`);
         showToast(`Joined queue at position ${body.queuePosition}!`, "success");
 
         // Auto-refresh status
         await userCheckStatus();
     } else {
-        const errBody = data.body ? JSON.parse(data.body) : data;
+        const errBody = unwrapApiBody(data);
         const errMsg = errBody?.error?.message || errBody?.message || errBody?.error || 'Unknown error';
         detailLog(`❌ Failed: ${errMsg}`);
         showToast(errMsg || "Failed to join queue", "error");
@@ -643,7 +744,7 @@ async function userCheckStatus() {
     btn.innerHTML = "Check My Status";
 
     if (data && !data.error) {
-        const body = data.body ? JSON.parse(data.body) : data;
+        const body = unwrapApiBody(data);
         detailLog(`📊 Status: ${body.status}, Position: ${body.queuePosition}, Wait: ${body.estimatedWaitMinutes} min`);
 
         // Update status panel
@@ -660,7 +761,7 @@ async function userCheckStatus() {
         document.getElementById("status-user-id").textContent = body.userId || userId;
 
     } else {
-        const errBody = data.body ? JSON.parse(data.body) : data;
+        const errBody = unwrapApiBody(data);
         detailLog(`ℹ️ ${errBody.message || 'Not in queue for this event'}`);
         showToast(errBody.message || "No queue entry found", "info");
 
@@ -691,7 +792,7 @@ async function userLeaveQueue() {
     btn.innerHTML = "Leave Queue";
 
     if (data && !data.error) {
-        const body = data.body ? JSON.parse(data.body) : data;
+        const body = unwrapApiBody(data);
         detailLog(`✅ ${body.message || 'Left the queue'}`);
         showToast("Successfully left the queue", "success");
 
@@ -699,9 +800,9 @@ async function userLeaveQueue() {
         document.getElementById("status-placeholder").style.display = "flex";
         document.getElementById("status-details").classList.remove("visible");
     } else {
-        const errBody = data.body ? JSON.parse(data.body) : data;
-        detailLog(`❌ Failed: ${errBody.message || errBody.error || 'Unknown error'}`);
-        showToast(errBody.message || "Failed to leave queue", "error");
+        const errBody = unwrapApiBody(data);
+        detailLog(`❌ Failed: ${data.error || errBody.message || errBody.error || 'Unknown error'}`);
+        showToast(data.error || errBody.message || "Failed to leave queue", "error");
     }
 
     loadEventStats();
@@ -712,7 +813,7 @@ async function loadEventStats() {
 
     const data = await api("GET", `/event/${selectedEventId}/stats`);
     if (data && !data.error) {
-        const body = data.body ? JSON.parse(data.body) : data;
+        const body = unwrapApiBody(data);
         document.getElementById("evt-stat-waiting").textContent = formatNumber(body.waitingUsers || 0);
         document.getElementById("evt-stat-admitted").textContent = formatNumber(body.admittedUsers || 0);
         document.getElementById("evt-stat-cancelled").textContent = formatNumber(body.cancelledUsers || 0);
@@ -833,7 +934,7 @@ async function loadAdminQueueEntries(eventId) {
     const status = adminCurrentFilter === "ALL" ? "ALL" : adminCurrentFilter;
     const response = await api("GET", `/queue/admin/list?eventId=${eventId}&status=${status}&limit=500`);
     if (response && !response.error) {
-        const body = response.body ? JSON.parse(response.body) : response;
+        const body = unwrapApiBody(response);
         adminQueueData = (body.entries || []).map(entry => ({
             queuePosition: entry.queuePosition,
             userId: entry.userId,
@@ -843,9 +944,9 @@ async function loadAdminQueueEntries(eventId) {
         }));
         adminLog(`Loaded ${adminQueueData.length} real queue entries from DynamoDB.`);
     } else {
-        const errBody = response?.body ? JSON.parse(response.body) : response;
+        const errBody = unwrapApiBody(response);
         adminQueueData = [];
-        adminLog(`Failed to load queue entries: ${errBody?.error?.message || errBody?.message || "Unknown error"}`);
+        adminLog(`Failed to load queue entries: ${response.error || errBody?.error?.message || errBody?.message || "Unknown error"}`);
     }
     renderAdminTable();
 }

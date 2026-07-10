@@ -38,7 +38,10 @@ End-to-end request path, from client to storage to observability. Matches the co
 │  │POST /join │  │GET /status │  │POST /leave│  │POST /admit  │  │
 │  └──────────┘  └────────────┘  └───────────┘  └─────────────┘  │
 │  ┌──────────────┐  ┌──────────────────┐  ┌──────────────────┐  │
-│  │POST /validate │  │GET /event/{id}   │  │GET /event/stats  │  │
+│  │POST /validate │  │GET /events       │  │POST /event       │  │
+│  └──────────────┘  └──────────────────┘  └──────────────────┘  │
+│  ┌──────────────────┐  ┌──────────────────┐                     │
+│  │GET /event/{id}   │  │GET /event/stats  │                     │
 │  └──────────────┘  └──────────────────┘  └──────────────────┘  │
 │                                                                 │
 │  • CORS Enabled    • X-Ray Tracing    • CloudWatch Metrics      │
@@ -57,7 +60,7 @@ End-to-end request path, from client to storage to observability. Matches the co
 │  │  (POST)      │  │  (POST)      │  │  (GET)       │          │
 │  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
 │  ┌──────────────┐                                               │
-│  │  Statistics  │   • Python 3.12    • Powertools Logger         │
+│  │  Statistics  │   • Python 3.14    • Powertools Logger         │
 │  │  (GET)       │   • 256 MB Memory  • 30s Timeout              │
 │  └──────┬───────┘                                               │
 │         │          Shared: src/common/ (constants, dynamodb,     │
@@ -159,10 +162,10 @@ The same happy path shown as a sequence diagram in [`07-system-architecture.md#r
   │                              │
   │  1. Validate input           │
   │  2. Check event is OPEN      │
-  │  3. Check duplicate (GSI1)   │
-  │  4. Atomic counter → pos     │
-  │  5. Conditional PutItem      │
-  │  6. Increment waitingUsers   │
+  │  3. Read sharded stats       │
+  │  4. Generate timestamp pos   │
+  │  5. Transact guard + queue   │
+  │  6. Increment stat shard     │
   └──────────┬───────────────────┘
              │  201 Created { queuePosition, estimatedWait }
              ▼
@@ -230,17 +233,18 @@ Every route from [`08-api-design.md`](../docs/08-api-design.md), mapped to its L
   │
   ├── POST  /queue/join        →  JoinQueueFunction
   │                                 ├── DynamoDB: GetItem (event check)
-  │                                 ├── DynamoDB: Query GSI1 (duplicate check)
-  │                                 ├── DynamoDB: UpdateItem (atomic counter)
-  │                                 ├── DynamoDB: PutItem (conditional write)
-  │                                 └── DynamoDB: UpdateItem (stats)
+  │                                 ├── DynamoDB: GetItem (stats/shard check)
+  │                                 ├── DynamoDB: TransactWriteItems (guard + queue)
+  │                                 └── DynamoDB: UpdateItem (sharded stats)
   │
   ├── GET   /queue/status      →  QueueStatusFunction
-  │                                 └── DynamoDB: Query GSI1
+  │                                 ├── DynamoDB: GetItem (registration guard)
+  │                                 └── DynamoDB: GetItem (queue row)
   │
   ├── POST  /queue/leave       →  LeaveQueueFunction
-  │                                 ├── DynamoDB: Query GSI1
+  │                                 ├── DynamoDB: GetItem (registration guard)
   │                                 ├── DynamoDB: UpdateItem (conditional)
+  │                                 ├── DynamoDB: DeleteItem (registration guard)
   │                                 └── DynamoDB: UpdateItem (stats x2)
   │
   ├── POST  /queue/admit       →  AdmitUsersFunction
@@ -251,6 +255,15 @@ Every route from [`08-api-design.md`](../docs/08-api-design.md), mapped to its L
   │
   ├── POST  /token/validate    →  ValidateTokenFunction
   │                                 └── DynamoDB: GetItem
+  │
+  ├── GET   /events            →  EventsFunction
+  │                                 └── DynamoDB: Scan event metadata
+  │
+  ├── POST  /event             →  AdminEventFunction
+  │                                 └── DynamoDB: TransactWriteItems (event + stats)
+  │
+  ├── GET   /queue/admin/list  →  AdminQueueListFunction
+  │                                 └── DynamoDB: Query GSI3
   │
   ├── GET   /event/{eventId}   →  EventLookupFunction
   │                                 └── DynamoDB: GetItem
@@ -270,12 +283,15 @@ Every Lambda gets exactly the access it needs and nothing more — the least-pri
   │  Read-Only Lambdas  │     │  Read-Write Lambdas    │
   │                     │     │                        │
   │  • Queue Status     │     │  • Join Queue          │
+  │  • Events List      │     │  • Admin Event Create  │
   │  • Event Lookup     │     │  • Leave Queue         │
   │  • Statistics       │     │  • Admit Users         │
   │  • Validate Token   │     │                        │
+  │  • Admin Queue List │     │                        │
   │                     │     │                        │
   │  Policy:            │     │  Policy:               │
   │  DynamoDBReadPolicy │     │  DynamoDBCrudPolicy    │
+  │                     │     │  + TransactWriteItems  │
   └─────────────────────┘     └────────────────────────┘
             │                           │
             └───────────┬───────────────┘

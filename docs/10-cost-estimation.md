@@ -78,7 +78,7 @@ This split mirrors the read-heavy traffic distribution modeled in [`03-access-pa
 
 ### Storage
 
-Stored entities: events, queue entries, admission tokens, statistics, and sessions — the same six item types defined in [`04-data-model.md`](04-data-model.md). TTL automatically clears out tokens and sessions once they expire, which keeps storage cost from growing unbounded over time.
+Stored entities: events, queue entries, queue registration guards, admission tokens, statistics, sharded statistics, and sessions — the item types defined in [`04-data-model.md`](04-data-model.md). TTL automatically clears out tokens and sessions once they expire, which keeps storage cost from growing unbounded over time.
 
 ---
 
@@ -140,7 +140,7 @@ Automatically deletes expired sessions and tokens, cutting storage cost without 
 
 ### Minimal GSIs
 
-Only the indexes that serve a real access pattern exist — GSI1 and GSI2, with GSI3 optional. Fewer indexes means lower storage, lower write amplification, and lower indexing cost. Full reasoning: [`06-index-design.md#why-not-more-gsis`](06-index-design.md#why-not-more-gsis).
+Only the indexes that serve a real access pattern exist — GSI1, GSI2, and GSI3. GSI3 is active because admin queue visibility and admission need status-ordered queue reads. Fewer indexes means lower storage, lower write amplification, and lower indexing cost. Full reasoning: [`06-index-design.md#why-not-more-gsis`](06-index-design.md#why-not-more-gsis).
 
 ### Query-Only Design
 
@@ -178,7 +178,7 @@ Recommended metrics to track over time: Lambda invocations, Lambda duration, Dyn
 
 - Push-based updates (WebSockets or Server-Sent Events) to cut down on polling volume — the single largest cost driver identified above
 - Attribute projection tuning on the GSIs
-- Write sharding for events with extreme registration spikes (see [`04-data-model.md#sharding-strategy`](04-data-model.md#sharding-strategy))
+- Further tuning of sharded stats counters for events with extreme registration spikes (see [`04-data-model.md#sharding-strategy`](04-data-model.md#sharding-strategy))
 - Log retention policies
 - Archiving historical queue data instead of keeping it live in the primary table
 

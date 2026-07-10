@@ -44,14 +44,17 @@ flowchart TD
     APIGW --> AU["Admit Users λ"]
     APIGW --> EL["Event Lookup λ"]
     APIGW --> ST["Statistics λ"]
+    APIGW --> EV["Events List λ"]
+    APIGW --> AE["Admin Event Create λ"]
+    APIGW --> AQ["Admin Queue List λ"]
 
-    JQ & CS & VT & LQ & AU & EL & ST --> DDB[("Amazon DynamoDB<br/>FootballWaitingRoom Table")]
+    JQ & CS & VT & LQ & AU & EL & ST & EV & AE & AQ --> DDB[("Amazon DynamoDB<br/>FootballWaitingRoom Table")]
 
     DDB --> Streams["DynamoDB Streams"]
     Streams --> EB["Amazon EventBridge<br/>(optional)"]
     EB --> Proc["Event Processing<br/>(future consumers)"]
 
-    JQ & CS & VT & LQ & AU & EL & ST --> CW["Amazon CloudWatch<br/>Logs & Metrics"]
+    JQ & CS & VT & LQ & AU & EL & ST & EV & AE & AQ --> CW["Amazon CloudWatch<br/>Logs & Metrics"]
     CW --> Alarms["Monitoring & Alerts"]
 ```
 
@@ -98,6 +101,12 @@ The single entry point. Responsible for HTTPS termination, request routing, auth
 | `GET /queue/status` | Check status |
 | `POST /token/validate` | Validate a token |
 | `POST /queue/leave` | Leave the queue |
+| `POST /queue/admit` | Admit users *(admin)* |
+| `GET /queue/admin/list` | List queue rows *(admin)* |
+| `GET /events` | List event catalog |
+| `POST /event` | Create an event *(admin)* |
+| `GET /event/{eventId}` | Event details |
+| `GET /event/{eventId}/stats` | Event statistics |
 
 *(Full endpoint list and contracts: [`08-api-design.md`](08-api-design.md).)*
 
@@ -107,10 +116,13 @@ Each function has exactly one responsibility:
 
 | Function | Responsibilities |
 |---|---|
-| **Join Queue** | Validate request · prevent duplicate registration · assign queue position · store queue record |
-| **Queue Status** | Retrieve queue information · calculate estimated wait · return current status |
+| **Join Queue** | Validate request · create registration guard and queue row transactionally · assign queue position |
+| **Queue Status** | Retrieve registration guard and queue row · calculate estimated wait · return current status |
 | **Token Validation** | Verify token exists · check expiration · return authorization decision |
 | **Queue Admission** | Select next users · update queue status · generate admission tokens (invocable on a schedule, manually, or by a future event trigger) |
+| **Events List** | Return DynamoDB-backed event catalog |
+| **Admin Event Create** | Create event metadata and initial stats transactionally |
+| **Admin Queue List** | Return real queue rows for the admin dashboard |
 
 ### 4. Amazon DynamoDB
 
@@ -148,7 +160,9 @@ sequenceDiagram
     participant D as DynamoDB
     C->>AG: POST /queue/join
     AG->>L: invoke
-    L->>D: Conditional PutItem
+    L->>D: GetItem event + sharded stats
+    L->>D: TransactWriteItems guard + queue row
+    L->>D: UpdateItem sharded stats
     D-->>L: Success
     L-->>AG: 201 Created
     AG-->>C: Queue position + status
@@ -164,7 +178,8 @@ sequenceDiagram
     participant D as DynamoDB
     C->>AG: GET /queue/status
     AG->>L: invoke
-    L->>D: Query (GSI1)
+    L->>D: GetItem registration guard
+    L->>D: GetItem queue row
     D-->>L: Queue record
     L-->>AG: 200 OK
     AG-->>C: Position, status, estimated wait
@@ -200,8 +215,10 @@ stateDiagram-v2
     Completed --> [*]
     Waiting --> Expired
     Waiting --> Cancelled
+    Waiting --> RegistrationClosed
     Expired --> [*]
     Cancelled --> [*]
+    RegistrationClosed --> [*]
 ```
 
 ---
@@ -225,15 +242,15 @@ AWS managed services provide multi-AZ resilience, automatic failover, and durabl
 ## Security
 
 - HTTPS-only communication
-- IAM least privilege (read-only Lambdas get `DynamoDBReadPolicy`; write Lambdas get `DynamoDBCrudPolicy`)
-- Admin endpoint (`POST /queue/admit`) protected by `x-admin-api-key` header — enforced server-side using constant-time comparison
-- `ADMIN_API_KEY` injected via Lambda environment variable (`AdminApiKey` SAM parameter) — never hardcoded in source
+- IAM least privilege, including explicit `dynamodb:TransactWriteItems` grants for transactional writers
+- Admin endpoints accept demo dashboard headers (`x-admin-email`, `x-admin-password`) and still support `x-admin-api-key` as a production path
+- Admin secrets are injected via Lambda environment variables from SAM parameters, not hardcoded in backend source
 - Input length validation on all user-supplied fields
 - batchSize capped at 500 to prevent excessive DynamoDB writes per call
 - Encryption at rest (SSE enabled on DynamoDB table)
 - Encryption in transit (HTTPS everywhere)
 - Token expiration enforced (TTL + runtime check)
-- API Gateway stage throttling (200 req/s rate, 500 burst)
+- API Gateway stage throttling (5,000 req/s rate, 2,000 burst)
 
 ---
 

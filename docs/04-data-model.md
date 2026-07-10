@@ -49,7 +49,7 @@ The model is optimized directly for the access patterns identified in [`03-acces
 
 ## High-Level Data Model
 
-The application manages six logical entity types. Although they appear as separate concepts, **all six live in one DynamoDB table.**
+The application manages seven logical entity types. Although they appear as separate concepts, **all seven live in one DynamoDB table.**
 
 ```mermaid
 flowchart TD
@@ -57,6 +57,8 @@ flowchart TD
     E --> Q[Queue Entries]
     E --> S[Queue Statistics]
     U[👤 Users]
+    U --> R[Queue Registration Guards]
+    R --> Q
     U --> Q
     U --> T[Admission Tokens]
     U --> SE[Sessions]
@@ -71,12 +73,13 @@ flowchart TD
 |---|---|---|---|
 | **1. Event** | A football match | Event ID, Match Name, Stadium, Capacity, Start Time, Queue Status | `EVENT#1001` |
 | **2. User** | A registered customer | User ID, Name, Email | — (global entity, may join multiple events) |
-| **3. Queue Entry** | A user's position in a specific event's queue | Queue Position, Join Time, Status, Estimated Wait, Shard ID, Admission Time | `QUEUE#<position>` |
-| **4. Admission Token** | Issued when a user is admitted | Token ID, User ID, Event ID, Expiration, Status | `TOKEN#<id>` |
-| **5. Session** | An active waiting-room session | Session ID, Last Activity, Device ID, TTL | `SESSION#ACTIVE` |
-| **6. Queue Statistics** | Aggregate counters | Users Waiting, Users Admitted, Queue Length, Average Wait Time | `STATS` |
+| **3. Queue Registration Guard** | A user's active registration for one event | User ID, Event ID, Queue Row Key, Status | `USER#<id> / QUEUE#EVENT#<eventId>` |
+| **4. Queue Entry** | A user's position in a specific event's queue | Queue Position, Join Time, Status, Estimated Wait, Shard ID, Admission Time | `QUEUE#<timestamp>#<uuid>` |
+| **5. Admission Token** | Issued when a user is admitted | Token ID, User ID, Event ID, Expiration, Status | `TOKEN#<id>` |
+| **6. Session** | An active waiting-room session | Session ID, Last Activity, Device ID, TTL | `SESSION#ACTIVE` |
+| **7. Queue Statistics** | Aggregate counters | Users Waiting, Users Admitted, Users Closed, Queue Length, Average Wait Time | `STATS` / `STATS#SHARD#<n>` |
 
-**Queue Entry status values:** `WAITING` · `ADMITTED` · `COMPLETED` · `CANCELLED` · `EXPIRED`
+**Queue Entry status values:** `WAITING` · `ADMITTED` · `COMPLETED` · `CANCELLED` · `EXPIRED` · `REGISTRATION_CLOSED`
 **Admission Token states:** `ACTIVE` · `USED` · `EXPIRED`
 
 ---
@@ -89,6 +92,7 @@ Every item stored in DynamoDB belongs to exactly one logical type:
 |---|---|
 | `EVENT` | Football event |
 | `USER` | Customer |
+| `QUEUE_REGISTRATION` | Active per-user registration guard |
 | `QUEUE` | Queue entry |
 | `TOKEN` | Admission token |
 | `SESSION` | Waiting-room session |
@@ -100,9 +104,11 @@ Every item stored in DynamoDB belongs to exactly one logical type:
 
 ```mermaid
 erDiagram
+    EVENT ||--o{ QUEUE_REGISTRATION : "has registrations"
     EVENT ||--o{ QUEUE_ENTRY : "has many"
     EVENT ||--o{ TOKEN : "has many"
     EVENT ||--|| STATS : "has one"
+    USER ||--o{ QUEUE_REGISTRATION : "has active event guards"
     USER ||--o{ QUEUE_ENTRY : "has many"
     USER ||--o{ TOKEN : "has many"
     USER ||--o{ SESSION : "has many"
@@ -124,8 +130,10 @@ stateDiagram-v2
     COMPLETED --> [*]
     WAITING --> EXPIRED
     WAITING --> CANCELLED
+    WAITING --> REGISTRATION_CLOSED
     EXPIRED --> [*]
     CANCELLED --> [*]
+    REGISTRATION_CLOSED --> [*]
 ```
 
 ### Admission Token Lifecycle

@@ -60,13 +60,20 @@ Every attribute and index exists because a specific query in [`03-access-pattern
 
 Every data retrieval operation uses `GetItem` or `Query`. Table scans are avoided deliberately, not just by convention.
 
-### Conditional Writes
+### Transactional Registration Guards
 
-Conditional expressions prevent duplicate queue registrations, race conditions, and lost updates:
+Join writes a per-user registration guard and the queue row together with `TransactWriteItems`. This prevents duplicate active registrations without doing a separate duplicate lookup on the normal successful path:
 
 ```
-attribute_not_exists(PK)
+USER#<userId> / QUEUE#EVENT#<eventId>
+EVENT#<eventId> / QUEUE#<timestamp>#<uuid>
 ```
+
+The helper intentionally sends plain Python values through the boto3 resource client for transactions; pre-serializing those items caused a deployed type-mismatch failure.
+
+### Sharded Counters
+
+High-write counters such as `waitingUsers`, `admittedUsers`, and `closedUsers` are distributed across stat shards to avoid concentrating every join on one `STATS` item.
 
 ### Time To Live (TTL)
 
@@ -100,7 +107,7 @@ Queue positions are assigned once and never rewritten — only the `status` fiel
 - Minimize cold start impact
 - Keep every function single-purpose, per [`00-project-status.md#lambda-responsibilities`](00-project-status.md#lambda-responsibilities)
 - Use structured logging throughout
-- Handle retries gracefully rather than failing hard on transient errors
+- Use adaptive DynamoDB retries and handle transient errors without hiding non-conditional transaction failures
 
 ---
 
@@ -180,6 +187,7 @@ Already supports high concurrent reads, high concurrent writes, multiple simulta
 - Design around access patterns, not entities — the whole schema in [`04-data-model.md`](04-data-model.md) and [`05-table-schema.md`](05-table-schema.md) exists because of this one decision made early, in [`02-requirements-analysis.md`](02-requirements-analysis.md).
 - Minimize indexes — every GSI has a real cost, so each one needs a real justification.
 - Avoid table scans, without exception.
+- Match boto3 client/resource data shapes carefully; transaction items sent through the resource client's underlying client must not be double-serialized.
 - Prefer immutable data where possible — the immutable queue position is the clearest example of how much this simplifies everything downstream.
 - Build for observability from day one, not as an afterthought once something breaks.
 

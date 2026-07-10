@@ -593,6 +593,17 @@ body {
     margin-bottom: 1.5rem;
 }
 
+.admin-create-event-card {
+    margin-bottom: 1.5rem;
+}
+
+.admin-event-form {
+    display: grid;
+    grid-template-columns: 0.8fr 1.4fr 1.1fr 0.8fr 1fr 0.8fr auto;
+    gap: 0.75rem;
+    align-items: center;
+}
+
 .batch-row {
     display: flex;
     gap: 0.75rem;
@@ -746,6 +757,10 @@ body {
 .status-badge.COMPLETED {
     background: rgba(245,158,11,0.15);
     color: #fcd34d;
+}
+.status-badge.REGISTRATION_CLOSED {
+    background: rgba(100,116,139,0.2);
+    color: #cbd5e1;
 }
 
 /* ---- Activity Log ---- */
@@ -1101,6 +1116,9 @@ body {
     .admin-controls-row {
         grid-template-columns: 1fr;
     }
+    .admin-event-form {
+        grid-template-columns: 1fr 1fr;
+    }
     .detail-grid {
         grid-template-columns: 1fr;
     }
@@ -1112,6 +1130,7 @@ body {
     .dashboard-container { padding: 1rem; }
     .page-title { font-size: 1.5rem; }
     .events-grid { grid-template-columns: 1fr; }
+    .admin-event-form { grid-template-columns: 1fr; }
     .home-stats-bar { flex-wrap: wrap; justify-content: center; }
     .table-filters { flex-wrap: wrap; }
 }

@@ -18,14 +18,15 @@ from typing import Any
 
 from common.constants import (
     EVENT_PREFIX,
+    GSI1PK,
+    GSI1SK,
     QUEUE_PREFIX,
     QUEUE_REGISTRATION_PREFIX,
-    STATS_SK,
     STATUS_CANCELLED,
     STATUS_WAITING,
     USER_PREFIX,
 )
-from common.dynamodb import increment_stats, query_user_queue, update_item
+from common.dynamodb import delete_item, increment_stats, query_user_queue, update_item
 from common.logger import logger
 from common.responses import bad_request, conflict, internal_error, not_found, success
 from common.utils import parse_body, utc_now_iso, validate_required_fields
@@ -72,14 +73,21 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         result = update_item(
             pk=pk,
             sk=sk,
-            update_expression="SET #status = :new_status, updatedAt = :now, GSI3SK = :gsi3sk",
+            update_expression=(
+                "SET #status = :new_status, updatedAt = :now, GSI3SK = :gsi3sk "
+                "REMOVE #gsi1pk, #gsi1sk"
+            ),
             expression_values={
                 ":new_status": STATUS_CANCELLED,
                 ":now": now,
                 ":current_status": STATUS_WAITING,
                 ":gsi3sk": f"STATUS#{STATUS_CANCELLED}#{padded}",
             },
-            expression_names={"#status": "status"},
+            expression_names={
+                "#status": "status",
+                "#gsi1pk": GSI1PK,
+                "#gsi1sk": GSI1SK,
+            },
             condition_expression="#status = :current_status",
         )
 
@@ -92,12 +100,9 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             {"waitingUsers": -1, "cancelledUsers": 1},
             shard_seed=user_id,
         )
-        update_item(
+        delete_item(
             pk=f"{USER_PREFIX}{user_id}",
             sk=f"{QUEUE_REGISTRATION_PREFIX}{event_id}",
-            update_expression="SET #status = :new_status, updatedAt = :now",
-            expression_values={":new_status": STATUS_CANCELLED, ":now": now},
-            expression_names={"#status": "status"},
         )
 
         logger.info("User successfully left queue", extra={"queuePosition": queue_position})

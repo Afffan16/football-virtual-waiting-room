@@ -23,7 +23,10 @@ from common.constants import (
     USER_PREFIX,
 )
 from common.dynamodb import (
+    close_waiting_registrations,
+    delete_item,
     get_event,
+    get_event_stats,
     get_item,
     increment_stats,
     query_user_queue,
@@ -39,16 +42,9 @@ from common.utils import (
     validate_required_fields,
 )
 
-_event_cache: dict[str, dict[str, Any]] = {}
-
-
 def _get_cached_event(event_id: str) -> dict[str, Any] | None:
-    """Return event metadata, caching it across warm Lambda invocations."""
-    if event_id not in _event_cache:
-        item = get_event(event_id)
-        if item:
-            _event_cache[event_id] = item
-    return _event_cache.get(event_id)
+    """Return fresh event metadata."""
+    return get_event(event_id)
 
 
 @logger.inject_lambda_context(log_event=True)
@@ -76,6 +72,16 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         event_status = event_item.get("status", "")
         if event_status != EVENT_OPEN:
             return forbidden(f"Event '{event_id}' is not accepting registrations (status: {event_status}).")
+
+        existing_registration = get_item(f"{USER_PREFIX}{user_id}", f"{QUEUE_REGISTRATION_PREFIX}{event_id}")
+        if existing_registration and existing_registration.get("status") in {"CANCELLED", "EXPIRED"}:
+            delete_item(f"{USER_PREFIX}{user_id}", f"{QUEUE_REGISTRATION_PREFIX}{event_id}")
+
+        event_capacity = int(event_item.get("capacity", 0))
+        stats = get_event_stats(event_id) or {}
+        if event_capacity > 0 and int(stats.get("totalUsers", 0)) >= event_capacity:
+            close_waiting_registrations(event_id)
+            return forbidden(f"Registration is closed for event '{event_id}' because capacity has been reached.")
 
         new_position = generate_queue_position()
         estimated_wait = estimate_wait_minutes(new_position)

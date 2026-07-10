@@ -230,6 +230,11 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref FootballWaitingRoomTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:TransactWriteItems
+              Resource: !GetAtt FootballWaitingRoomTable.Arn
       Events:
         JoinQueue:
           Type: Api
@@ -352,6 +357,47 @@ Resources:
             Path: /event/{eventId}
             Method: GET
 
+  # --- Events List ---
+  EventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Lists all football events for the frontend catalog
+      CodeUri: src/
+      Handler: events.app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref FootballWaitingRoomTable
+      Events:
+        EventsList:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitingRoomApi
+            Path: /events
+            Method: GET
+
+  # --- Admin Event Create ---
+  AdminEventFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Creates a new football event and initial stats record
+      CodeUri: src/
+      Handler: admin_event.app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref FootballWaitingRoomTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:TransactWriteItems
+              Resource: !GetAtt FootballWaitingRoomTable.Arn
+      Events:
+        AdminEventCreate:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitingRoomApi
+            Path: /event
+            Method: POST
+
   # --- Statistics ---
   StatisticsFunction:
     Type: AWS::Serverless::Function
@@ -421,6 +467,14 @@ Outputs:
   EventLookupFunctionArn:
     Description: Event Lookup Lambda ARN
     Value: !GetAtt EventLookupFunction.Arn
+
+  EventsFunctionArn:
+    Description: Events List Lambda ARN
+    Value: !GetAtt EventsFunction.Arn
+
+  AdminEventFunctionArn:
+    Description: Admin Event Create Lambda ARN
+    Value: !GetAtt AdminEventFunction.Arn
 
   StatisticsFunctionArn:
     Description: Statistics Lambda ARN

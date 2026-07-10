@@ -42,7 +42,7 @@ A **Single Table Design** (`FootballWaitingRoom`) storing six entity types in on
 | `PK` | `EVENT#<eventId>` | Groups all queue entries for one event in a single item collection |
 | `SK` | `QUEUE#<timestamp_ms>-<uuid8>` | Lexicographically sortable; timestamp ensures order, UUID ensures uniqueness |
 | `userId` | Fan identifier | Who joined |
-| `status` | `WAITING` / `ADMITTED` / `COMPLETED` / `EXPIRED` / `CANCELLED` | Eligibility state |
+| `status` | `WAITING` / `ADMITTED` / `COMPLETED` / `EXPIRED` / `CANCELLED` / `REGISTRATION_CLOSED` | Eligibility state |
 | `joinTime` | ISO 8601 timestamp | Entry timestamp |
 | `estimatedWait` | Integer (minutes) | Real-time wait estimate |
 | `GSI3SK` | `STATUS#WAITING#<position>` | Enables ordered batch promotion |
@@ -53,8 +53,9 @@ A **Single Table Design** (`FootballWaitingRoom`) storing six entity types in on
 |---|---|---|---|
 | Event | `EVENT#<id>` | `METADATA` | Match metadata (stadium, capacity, status) |
 | **Queue Entry** | `EVENT#<id>` | `QUEUE#<ts-uuid>` | Fan's place in the queue |
+| Queue Registration Guard | `USER#<id>` | `QUEUE#EVENT#<eventId>` | Prevents duplicate active registration and points to the queue row |
 | Admission Token | `TOKEN#<id>` | `METADATA` | Short-lived checkout credential (TTL) |
-| Statistics | `EVENT#<id>` | `STATS` | Atomic counters for waiting/admitted/cancelled |
+| Statistics | `EVENT#<id>` | `STATS` and `STATS#SHARD#nn` | Base stats metadata plus sharded hot counters |
 | User | `USER#<id>` | `PROFILE` | Fan profile |
 | Session | `USER#<id>` | `SESSION#ACTIVE` | Active session (TTL) |
 
@@ -88,8 +89,8 @@ position = f"{timestamp_ms:014d}-{uuid4_hex[:8]}"
 | Fair ordering | Millisecond-precision timestamp ensures first-come-first-served within normal human timescales |
 | Clock skew | Positions are assigned **server-side** inside the Lambda — the client's clock is never trusted |
 | Near-simultaneous arrivals | The 8-character UUID suffix guarantees uniqueness and provides randomised tie-breaking among fans who arrive in the same millisecond |
-| Gaming prevention | Position is determined at server-side write time, not derived from anything the client supplies. Conditional `PutItem` with `attribute_not_exists(PK) AND attribute_not_exists(SK)` prevents a fan from re-joining to get a better position |
-| Hot partitions | **No atomic counter** is used for position assignment. An atomic counter on a single Stats item would become a hot key under 10M concurrent writes. The timestamp-uuid approach is fully distributed — every write goes to a different sort key |
+| Gaming prevention | Position is determined at server-side write time, not derived from anything the client supplies. A transactional write creates both the queue row and the per-user registration guard, preventing duplicate active joins |
+| Hot partitions | **No atomic counter** is used for position assignment. An atomic counter on a single Stats item would become a hot key under 10M concurrent writes. The timestamp-uuid approach is paired with sharded stats counters to keep the join path distributed |
 
 The position string is **lexicographically sortable**, so DynamoDB's native sort key ordering gives the correct admission sequence with zero additional computation.
 
@@ -206,7 +207,7 @@ batch_size = available_slots
 **Responses:**
 
 - If slots are available: admits `available_slots` fans, returns `activePurchasers` and `purchasingCapacity`
-- If at capacity: returns `capacityFull: true` immediately — no DynamoDB writes, no fan movement
+- If at capacity: returns `capacityFull: true`; remaining waiting registrations can be moved to `REGISTRATION_CLOSED` and the event can be marked `CLOSED`
 
 **Frontend integration:** the Admin Dashboard has an "⚡ Auto-Fill" button that calls `capacityMode: true`. An admin (or automated scheduler) can repeatedly call this to maintain the purchasing pool near 1,000 without over-admitting.
 
@@ -226,9 +227,10 @@ The challenge asked for a data model. This submission delivers a **fully deploye
 
 | Extra | Detail |
 |---|---|
-| **7 Lambda functions** | One per operation — Join, Status, Leave, Admit, Validate Token, Event Lookup, Statistics |
+| **10 Lambda functions** | One per operation — Join, Status, Leave, Admit, Admin Queue List, Validate Token, Event Lookup, Events List, Admin Event Create, Statistics |
 | **Live deployed API** | `https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod` |
 | **Frontend SPA** | Glassmorphism dark-themed app with Admin Dashboard and User flow |
+| **DynamoDB-backed events** | `GET /events` loads the event catalog; admin `POST /event` creates new events and stats rows |
 | **1M-request load test** | `scripts/mass_ticket_requests.py` — asyncio + aiohttp, p50/p90/p95/p99 reporting |
 | **API security** | Admin key auth (`hmac.compare_digest`), input validation, throttling |
 | **Infrastructure as Code** | Full AWS SAM template — one command deploys everything |
@@ -246,7 +248,7 @@ The challenge asked for a data model. This submission delivers a **fully deploye
 | GSI1 `USER#<id>` partition key | Status checks (65% of traffic) hit a separate partition per user — no shared hot key |
 | Immutable queue positions | Only `status` changes; positions never rewrite — flat write volume at scale |
 | TTL for tokens and sessions | Zero cleanup jobs; DynamoDB handles expiry automatically |
-| Conditional writes everywhere | Idempotency and race-condition protection without transactions |
+| Transactional join guard | Queue row and active registration guard are written atomically; duplicate joins return the existing active registration |
 
 ---
 
@@ -261,6 +263,7 @@ The challenge asked for a data model. This submission delivers a **fully deploye
 | [`docs/`](docs/) | 13-document engineering log |
 | [`frontend/`](frontend/) | Live SPA connected to the deployed API |
 | [`scripts/mass_ticket_requests.py`](scripts/mass_ticket_requests.py) | 1M-request async load test |
+| [`scripts/clear_event_records.py`](scripts/clear_event_records.py) | Reset queue/session/token records while preserving event metadata |
 | [`DELIVERABLES.md`](DELIVERABLES.md) | This file |
 | [`README.md`](README.md) | Full project overview |
 

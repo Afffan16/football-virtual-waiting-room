@@ -23,7 +23,10 @@ This folder contains the Postman collection and environment used to exercise the
 | Queue Status | `GET /queue/status` |
 | Leave Queue | `POST /queue/leave` |
 | Admit Users | `POST /queue/admit` |
+| Admin Queue List | `GET /queue/admin/list` |
 | Validate Token | `POST /token/validate` |
+| Events List | `GET /events` |
+| Create Event | `POST /event` |
 | Event Lookup | `GET /event/{eventId}` |
 | Queue Statistics | `GET /event/{eventId}/stats` |
 
@@ -39,6 +42,9 @@ Full request/response contracts for each of these live in [`08-api-design.md`](.
 | `eventId` | Sample event ID to test against |
 | `userId` | Sample user ID to test against |
 | `token` | Admission token, captured from a successful admission for use in token validation |
+| `adminEmail` | Demo admin email, default `admin123@gmail.com` |
+| `adminPassword` | Demo admin password, default `admin123` |
+| `adminApiKey` | Optional admin API key if using the API-key path |
 
 ---
 
@@ -57,7 +63,8 @@ Requests are easiest to follow in the same order a real user would move through 
 
 1. **Join Queue** — registers the sample user and returns a queue position
 2. **Queue Status** — confirms the registration and current position
-3. **Admit User** *(admin)* — moves the user from `WAITING` to `ADMITTED` and issues a token
-4. **Validate Token** — confirms the issued token is active before checkout
+3. **Queue Admin List** *(admin)* — confirms the user appears in the real queue table
+4. **Admit User** *(admin)* — moves the user from `WAITING` to `ADMITTED` and issues a token
+5. **Validate Token** — confirms the issued token is active before checkout
 
 Running them out of order works too — for example, calling **Validate Token** before **Admit User** should correctly return an unauthorized response, which is a useful check in itself.

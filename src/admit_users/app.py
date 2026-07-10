@@ -32,6 +32,7 @@ from common.constants import (
     USER_PREFIX,
 )
 from common.dynamodb import (
+    close_waiting_registrations,
     get_event_stats,
     increment_stats,
     put_item,
@@ -75,13 +76,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             currently_admitted = int(stats_now.get("admittedUsers", 0))
             available_slots = max(0, purchasing_capacity - currently_admitted)
             if available_slots == 0:
+                closed_count = close_waiting_registrations(event_id)
                 return success({
                     "admittedUsers": 0,
-                    "remainingQueue": int(stats_now.get("waitingUsers", 0)),
+                    "remainingQueue": max(0, int(stats_now.get("waitingUsers", 0)) - closed_count),
                     "admittedUserIds": [],
                     "capacityFull": True,
                     "activePurchasers": currently_admitted,
                     "purchasingCapacity": purchasing_capacity,
+                    "closedRegistrations": closed_count,
                 })
             batch_size = available_slots
 
@@ -180,12 +183,19 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             )
 
         stats = get_event_stats(event_id) or {}
+        closed_count = 0
+        active_purchasers = int(stats.get("admittedUsers", 0))
+        if active_purchasers >= purchasing_capacity and int(stats.get("waitingUsers", 0)) > 0:
+            closed_count = close_waiting_registrations(event_id)
+            stats = get_event_stats(event_id) or {}
+
         return success({
             "admittedUsers": admitted_count,
             "remainingQueue": int(stats.get("waitingUsers", 0)),
             "admittedUserIds": admitted_user_ids,
             "activePurchasers": int(stats.get("admittedUsers", 0)),
             "purchasingCapacity": purchasing_capacity if capacity_mode else PURCHASING_CAPACITY,
+            "closedRegistrations": closed_count,
         })
 
     except Exception:
