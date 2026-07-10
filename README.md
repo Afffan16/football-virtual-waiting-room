@@ -2,7 +2,7 @@
 
 # 🏟️ Football Virtual Waiting Room
 
-### A serverless, DynamoDB-powered queue system built to survive a Manchester United vs. Liverpool ticket drop
+### A serverless, DynamoDB-powered queue system built to survive a football match ticket drop
 
 *AWS Builder Center — DynamoDB Data Modeling Challenge*
 
