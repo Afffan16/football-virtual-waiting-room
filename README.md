@@ -392,7 +392,7 @@ sam deploy --parameter-overrides AdminApiKey="$(openssl rand -hex 32)"
 After editing files in `frontend/`, sync to S3 and invalidate the CloudFront cache so visitors see the update immediately:
 
 ```bash
-aws s3 sync ./frontend s3://football-waiting-room-affan --delete
+aws s3 sync ./folder <your s3 url> --delete
 aws cloudfront create-invalidation --distribution-id <YOUR_DISTRIBUTION_ID> --paths "/*"
 ```
 
