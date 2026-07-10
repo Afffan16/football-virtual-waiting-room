@@ -396,7 +396,7 @@ sam deploy --parameter-overrides AdminApiKey="$(openssl rand -hex 32)"
 After editing files in `frontend/`, sync to S3 and invalidate the CloudFront cache so visitors see the update immediately:
 
 ```bash
-aws s3 sync ./frontend s3://football-waiting-room-affan --delete
+aws s3 sync ./folder <your s3 url> --delete
 aws cloudfront create-invalidation --distribution-id <YOUR_DISTRIBUTION_ID> --paths "/*"
 ```
 
@@ -461,17 +461,6 @@ Full breakdown: [`docs/10-cost-estimation.md`](docs/10-cost-estimation.md).
 | **12** | **[Testing Guide](docs/12-testing-guide.md)** | **Complete how-to testing reference** |
 | **13** | **[Deployment Guide](docs/13-deployment-guide.md)** | **End-to-end deployment + S3/CloudFront** |
 
----
-
-## 🗺️ Roadmap
-
-- [ ] Push-based queue updates via WebSocket / SSE (replace polling)
-- [ ] Multi-region deployment with DynamoDB Global Tables
-- [ ] Write sharding for extreme-scale events (`EVENT#id#SHARD#n`)
-- [ ] Lambda Authorizer / Cognito for verified user identity
-- [ ] Move admin key to AWS Secrets Manager
-- [ ] Redis/ElastiCache layer for hot read paths
-- [ ] Real-time analytics dashboard
 
 ---
 
