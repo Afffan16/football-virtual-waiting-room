@@ -19,6 +19,7 @@ Globals:
         ADMIN_API_KEY: !Ref AdminApiKey
         ADMIN_EMAIL: !Ref AdminEmail
         ADMIN_PASSWORD: !Ref AdminPassword
+        QUEUE_SHARD_COUNT: !Ref QueueShardCount
     LoggingConfig:
       LogFormat: JSON
 
@@ -46,6 +47,10 @@ Parameters:
       Maximum number of fans in the ADMITTED (active purchasing) state at once.
       The admit endpoint in capacity-aware mode (capacityMode=true) will only
       admit enough fans to fill up to this limit.
+  QueueShardCount:
+    Type: Number
+    Default: 16
+    Description: Number of deterministic event queue shards used for hot-partition avoidance.
   AdminApiKey:
     Type: String
     NoEcho: true

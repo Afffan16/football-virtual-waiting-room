@@ -23,6 +23,7 @@ TOKEN_PREFIX: str = "TOKEN#"
 SESSION_PREFIX: str = "SESSION#"
 QUEUE_REGISTRATION_PREFIX: str = "QUEUE#EVENT#"
 STATS_SHARD_PREFIX: str = "STATS#SHARD#"
+QUEUE_SHARD_PREFIX: str = "SHARD#"
 
 # Sort Key Constants
 METADATA_SK: str = "METADATA"
@@ -110,6 +111,7 @@ MAX_BATCH_SIZE: int = int(os.environ.get("MAX_BATCH_SIZE", "500"))
 # up to this limit. Set via SAM parameter PurchasingCapacity.
 PURCHASING_CAPACITY: int = int(os.environ.get("PURCHASING_CAPACITY", "1000"))
 STATS_SHARD_COUNT: int = int(os.environ.get("STATS_SHARD_COUNT", "16"))
+QUEUE_SHARD_COUNT: int = int(os.environ.get("QUEUE_SHARD_COUNT", "16"))
 
 # ---------------------------------------------------------------------------
 # Demo Admin Login

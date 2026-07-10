@@ -19,7 +19,7 @@
 - [Example Items](#example-items)
 - [Item Collection](#item-collection)
 - [Design Considerations](#design-considerations)
-- [Future Scalability](#future-scalability)
+- [Scalability](#scalability)
 
 ---
 
@@ -109,7 +109,7 @@ STATS
 
 | | |
 |---|---|
-| **PK** | `EVENT#1001` |
+| **PK** | `EVENT#1001#SHARD#07` |
 | **SK** | `QUEUE#2026-07-10T18:01:22.123456Z#8f4a` |
 
 | Attribute | Description |
@@ -119,7 +119,7 @@ STATS
 | `joinTime` | Registration time |
 | `status` | `WAITING` / `ADMITTED` / `COMPLETED` / `CANCELLED` / `EXPIRED` / `REGISTRATION_CLOSED` |
 | `estimatedWait` | Estimated wait |
-| `shardId` | Stats shard used for high-write events |
+| `queueShard` | Queue write shard for this event |
 
 ### User Item
 
@@ -232,11 +232,12 @@ Some attributes appear across multiple item types:
 ```json
 // Queue Entry
 {
-  "PK": "EVENT#1001",
+  "PK": "EVENT#1001#SHARD#07",
   "SK": "QUEUE#2026-07-10T18:01:22.123456Z#8f4a",
   "entityType": "QUEUE",
   "userId": "501",
-  "queuePosition": 123,
+  "queueShard": 7,
+  "queuePosition": "2026-07-10T18:01:22.123456Z#8f4a",
   "status": "WAITING",
   "joinTime": "2026-07-08T12:00:00Z"
 }
@@ -259,18 +260,22 @@ Some attributes appear across multiple item types:
 
 ## Item Collection
 
-A single `Query` on `PK = EVENT#1001` returns the entire item collection for that event in one request:
+Event metadata and aggregate stats live under `PK = EVENT#1001`; high-volume queue rows live under sharded event partitions:
 
 ```
 EVENT#1001
 │
 ├── METADATA
-├── STATS
-├── QUEUE#000001
-├── QUEUE#000002
-├── QUEUE#000003
-├── QUEUE#000004
-└── QUEUE#000005
+└── STATS
+
+EVENT#1001#SHARD#00
+│
+├── QUEUE#2026-07-10T18:01:22.123456Z#8f4a
+└── QUEUE#2026-07-10T18:01:22.223456Z#a901
+
+EVENT#1001#SHARD#01
+│
+└── QUEUE#2026-07-10T18:01:22.323456Z#4bb2
 ```
 
 ---
@@ -297,16 +302,9 @@ Instead of moving every user forward when someone leaves the queue, positions st
 
 ---
 
-## Future Scalability
+## Scalability
 
-If write throughput becomes extremely high, queue entries can transition from:
-
-```diff
-- PK = EVENT#1001
-+ PK = EVENT#1001#SHARD#07
-```
-
-**without changing the external API contract.** This is the write-sharding strategy introduced in [`04-data-model.md#sharding-strategy`](04-data-model.md#sharding-strategy) — the schema is deliberately structured so this migration is additive, not a breaking change.
+Queue write sharding is implemented now, not left as a future migration. New joins write queue rows to `EVENT#<id>#SHARD#<nn>` and set `GSI3PK` to the same sharded event key. Admission and admin listing query all configured shards and merge by `GSI3SK`, preserving fair timestamp order while avoiding one hot event partition.
 
 ---
 

@@ -271,10 +271,11 @@ The Football Virtual Waiting Room is a fully deployed, serverless application bu
 
 **Core AWS services:** Amazon API Gateway · AWS Lambda · Amazon DynamoDB · DynamoDB Streams · Amazon CloudWatch · AWS IAM.
 
-**DynamoDB design:** Single Table Design with six entity types, satisfying every access pattern in [`03-access-patterns.md`](03-access-patterns.md) without a single table scan — schema in [`05-table-schema.md`](05-table-schema.md), indexes in [`06-index-design.md`](06-index-design.md).
+**DynamoDB design:** Single Table Design with queue write sharding, guarded registrations, and sharded counters, satisfying every access pattern in [`03-access-patterns.md`](03-access-patterns.md) without a single table scan — schema in [`05-table-schema.md`](05-table-schema.md), indexes in [`06-index-design.md`](06-index-design.md).
 
 **Key design decisions:**
 - Timestamp-based queue positions (no sequential counters = no hot partitions)
+- Queue rows and GSI3 admin/admission views are sharded by `EVENT#<id>#SHARD#nn`
 - Immutable positions — only `status` changes (flat write volume at scale)
 - Conditional writes for idempotency
 - TTL-based automatic cleanup (zero cron jobs)
@@ -282,6 +283,6 @@ The Football Virtual Waiting Room is a fully deployed, serverless application bu
 - API Gateway throttling + usage plan
 - DynamoDB transaction permissions explicitly granted where needed (`dynamodb:TransactWriteItems`)
 
-**Future enhancements:** WebSocket/SSE push updates (biggest single impact — replaces polling which drives the majority of read cost) · write sharding · multi-region Global Tables · Lambda Authorizer + Cognito for user identity · move admin key to Secrets Manager.
+**Future enhancements:** WebSocket/SSE push updates (biggest single impact — replaces polling which drives the majority of read cost) · multi-region Global Tables · Lambda Authorizer + Cognito for user identity · move admin key to Secrets Manager.
 
 *For the full engineering log, see [`docs/01`](01-challenge-details.md) through [`docs/13`](13-deployment-guide.md).*

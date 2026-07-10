@@ -20,6 +20,8 @@ The frontend sends these credentials as `x-admin-email` and `x-admin-password` f
 - DynamoDB boto3 client uses adaptive retry behavior.
 - Join queue no longer does the duplicate lookup on the normal successful path.
 - Queue positions use timestamp + UUID strings for lexicographic fairness and tie-breaking.
+- Queue rows now write to deterministic event shards (`EVENT#<id>#SHARD#nn`) instead of one `EVENT#<id>` hot partition.
+- GSI3 admin/admission partitions are sharded the same way and merged by `queuePosition` for fair admission order.
 - Stats use sharded counters to avoid a single hot STATS item.
 
 ### 2. Duplicate Registration Guard

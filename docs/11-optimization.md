@@ -148,7 +148,7 @@ Already supports high concurrent reads, high concurrent writes, multiple simulta
 
 ### Future Enhancements
 
-**Write sharding:** distribute queue entries across multiple logical shards to reduce hot partitions during extreme registration bursts. The key structure already supports this as an additive change — see [`05-table-schema.md#future-scalability`](05-table-schema.md#future-scalability) and [`04-data-model.md#sharding-strategy`](04-data-model.md#sharding-strategy).
+**Queue write sharding:** queue entries and their GSI3 admin/admission records are distributed across deterministic event shards. Admission and admin listing query all shards and merge by timestamp queue position, avoiding a single hot event partition without giving up fairness.
 
 **Push-based updates:** replace frequent polling with API Gateway WebSocket APIs or Server-Sent Events. Fewer reads, lower latency, better user experience — this is the single change most likely to move the needle, since queue-status polling is the dominant traffic source identified in [`03-access-patterns.md#expected-request-distribution`](03-access-patterns.md#expected-request-distribution).
 

@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from boto3.dynamodb.conditions import Key
-
 from common.auth import is_admin_authorized
 from common.constants import (
     DEFAULT_BATCH_SIZE,
@@ -17,7 +15,6 @@ from common.constants import (
     EVENT_PREFIX,
     GSI2PK,
     GSI2SK,
-    GSI3_NAME,
     MAX_BATCH_SIZE,
     METADATA_SK,
     PURCHASING_CAPACITY,
@@ -36,7 +33,7 @@ from common.dynamodb import (
     get_event_stats,
     increment_stats,
     put_item,
-    query_items,
+    query_waiting_users,
     update_item,
 )
 from common.logger import logger
@@ -95,14 +92,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         logger.append_keys(eventId=event_id, batchSize=batch_size)
         logger.info("Processing admit users request")
 
-        waiting_items = query_items(
-            index_name=GSI3_NAME,
-            key_condition=(
-                Key("GSI3PK").eq(f"{EVENT_PREFIX}{event_id}")
-                & Key("GSI3SK").begins_with(f"STATUS#{STATUS_WAITING}#")
-            ),
-            limit=batch_size,
-        )
+        waiting_items = query_waiting_users(event_id, limit=batch_size)
 
         if not waiting_items:
             stats = get_event_stats(event_id) or {}
@@ -125,8 +115,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
                 continue
 
             updated = update_item(
-                pk=f"{EVENT_PREFIX}{event_id}",
-                sk=f"{QUEUE_PREFIX}{queue_position}",
+                pk=item.get("PK", f"{EVENT_PREFIX}{event_id}"),
+                sk=item.get("SK", f"{QUEUE_PREFIX}{queue_position}"),
                 update_expression="SET #status = :new_status, admissionTime = :now, updatedAt = :now, GSI3SK = :gsi3sk",
                 expression_values={
                     ":new_status": STATUS_ADMITTED,

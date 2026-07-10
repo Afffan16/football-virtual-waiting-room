@@ -262,7 +262,7 @@ pie showData
 
 | Challenge | Mitigation |
 |---|---|
-| **Hot partitions** — millions of users may join the same event simultaneously | Event-based partitioning · write sharding if necessary · adaptive capacity |
+| **Hot partitions** — millions of users may join the same event simultaneously | Queue rows and GSI3 admin/admission rows are written to deterministic `EVENT#<id>#SHARD#nn` partitions · adaptive capacity |
 | **Polling traffic** — users repeatedly check queue status | Query by User ID · lightweight projections · efficient indexing |
 | **Admission processing** — users must be admitted in order | Sort key ordering · `Query` with `Limit` · batch updates |
 | **Token validation** — must remain extremely fast | Direct key lookup · dedicated GSI if required |

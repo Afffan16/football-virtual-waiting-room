@@ -321,7 +321,7 @@ football-virtual-waiting-room/
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.14+
 - [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
 - An AWS account with configured credentials (`aws configure`)
 

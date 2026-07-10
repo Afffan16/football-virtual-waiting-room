@@ -111,9 +111,9 @@ The physical layout behind [`05-table-schema.md`](../docs/05-table-schema.md), w
 ├──────────────────┼──────────────────┼────────────────────────────────────┤
 │ EVENT#1001       │ METADATA         │ Event details (match, stadium...)  │
 │ EVENT#1001       │ STATS            │ Queue statistics (counters)        │
-│ EVENT#1001       │ QUEUE#0000000001 │ Queue entry (user, position, ...)  │
-│ EVENT#1001       │ QUEUE#0000000002 │ Queue entry (user, position, ...)  │
-│ EVENT#1001       │ QUEUE#0000000003 │ Queue entry (user, position, ...)  │
+│ EVENT#1001#SHARD#00 │ QUEUE#2026...#a1 │ Queue entry (user, position)   │
+│ EVENT#1001#SHARD#01 │ QUEUE#2026...#b2 │ Queue entry (user, position)   │
+│ EVENT#1001#SHARD#02 │ QUEUE#2026...#c3 │ Queue entry (user, position)   │
 │ TOKEN#A1B2C3D4   │ METADATA         │ Admission token (ttl, status)     │
 ├──────────────────┴──────────────────┴────────────────────────────────────┤
 │                                                                          │
@@ -136,9 +136,9 @@ The physical layout behind [`05-table-schema.md`](../docs/05-table-schema.md), w
 │  ┌──────────────────────┬──────────────────────────────────────┐         │
 │  │      GSI3PK          │      GSI3SK                          │         │
 │  ├──────────────────────┼──────────────────────────────────────┤         │
-│  │ EVENT#1001           │ STATUS#WAITING#0000000001            │         │
-│  │ EVENT#1001           │ STATUS#WAITING#0000000002            │         │
-│  │ EVENT#1001           │ STATUS#ADMITTED#0000000003           │         │
+│  │ EVENT#1001#SHARD#00  │ STATUS#WAITING#2026...#a1           │         │
+│  │ EVENT#1001#SHARD#01  │ STATUS#WAITING#2026...#b2           │         │
+│  │ EVENT#1001#SHARD#02  │ STATUS#ADMITTED#2026...#c3          │         │
 │  └──────────────────────┴──────────────────────────────────────┘         │
 │                                                                          │
 └──────────────────────────────────────────────────────────────────────────┘

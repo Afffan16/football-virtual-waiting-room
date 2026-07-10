@@ -64,8 +64,8 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         # ----- Build primary key for update -----
         queue_position = item.get("queuePosition", "")
         padded = queue_position
-        pk = f"{EVENT_PREFIX}{event_id}"
-        sk = f"{QUEUE_PREFIX}{padded}"
+        pk = item.get("PK", f"{EVENT_PREFIX}{event_id}")
+        sk = item.get("SK", f"{QUEUE_PREFIX}{padded}")
 
         now = utc_now_iso()
 

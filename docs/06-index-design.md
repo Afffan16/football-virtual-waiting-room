@@ -97,11 +97,11 @@ Used by the admin dashboard and admission flow to list event queue rows by statu
 
 | | |
 |---|---|
-| **Partition Key** | `GSI3PK = EVENT#1001` |
+| **Partition Key** | `GSI3PK = EVENT#1001#SHARD#07` |
 | **Sort Key** | `STATUS#WAITING` |
 
 ```
-EVENT#1001
+EVENT#1001#SHARD#00
    │
    ├── WAITING
    ├── WAITING
@@ -111,7 +111,7 @@ EVENT#1001
    └── EXPIRED
 ```
 
-**Supported queries:** Waiting Users · Admitted Users · Completed Users · Expired Users
+**Supported queries:** Waiting Users · Admitted Users · Completed Users · Expired Users. The application queries every configured event shard and merges by `GSI3SK`, so admission remains globally ordered by queue position.
 
 **Benefit:** avoids filtering large datasets client-side; supports operational dashboards directly.
 

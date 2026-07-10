@@ -105,3 +105,21 @@ class TestJoinQueueHandler:
         stats = get_event_stats("1001")
         assert int(stats["totalUsers"]) >= 1
         assert int(stats["waitingUsers"]) >= 1
+
+    def test_join_queue_writes_to_queue_shard(self, seeded_table: Any, lambda_context: MockLambdaContext) -> None:
+        from join_queue.app import lambda_handler
+
+        event = make_apigw_event(body={"eventId": "1001", "userId": "user_001"})
+        response = lambda_handler(event, lambda_context)
+        body = json.loads(response["body"])
+
+        registration = seeded_table.get_item(
+            Key={"PK": "USER#user_001", "SK": "QUEUE#EVENT#1001"}
+        )["Item"]
+        queue_item = seeded_table.get_item(
+            Key={"PK": registration["queuePK"], "SK": registration["queueSK"]}
+        )["Item"]
+
+        assert registration["queuePK"].startswith("EVENT#1001#SHARD#")
+        assert queue_item["GSI3PK"].startswith("EVENT#1001#SHARD#")
+        assert queue_item["queuePosition"] == body["queuePosition"]

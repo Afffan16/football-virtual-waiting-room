@@ -29,7 +29,7 @@ from common.constants import (
     TABLE_NAME,
     USER_PREFIX,
 )
-from common.dynamodb import atomic_increment
+from common.dynamodb import atomic_increment, queue_gsi3_pk, queue_shard_id, queue_shard_pk
 from common.utils import estimate_wait_minutes, format_queue_position, utc_now_iso
 
 
@@ -52,13 +52,15 @@ def generate_users(count: int, event_id: str = "1001") -> None:
         position = atomic_increment(stats_pk, STATS_SK, "totalUsers")
         padded = format_queue_position(position)
         estimated_wait = estimate_wait_minutes(position)
+        queue_shard = queue_shard_id(f"{event_id}#{user_id}")
 
         queue_item: dict[str, Any] = {
-            "PK": f"{EVENT_PREFIX}{event_id}",
+            "PK": queue_shard_pk(event_id, queue_shard),
             "SK": f"{QUEUE_PREFIX}{padded}",
             "entityType": ENTITY_QUEUE,
             "eventId": event_id,
             "userId": user_id,
+            "queueShard": queue_shard,
             "queuePosition": position,
             "status": STATUS_WAITING,
             "joinTime": now,
@@ -70,7 +72,7 @@ def generate_users(count: int, event_id: str = "1001") -> None:
             GSI1PK: f"{USER_PREFIX}{user_id}",
             GSI1SK: f"{EVENT_PREFIX}{event_id}",
             # GSI3 — Admin Queue View
-            GSI3PK: f"{EVENT_PREFIX}{event_id}",
+            GSI3PK: queue_gsi3_pk(event_id, queue_shard),
             GSI3SK: f"STATUS#{STATUS_WAITING}#{padded}",
         }
         registration_item: dict[str, Any] = {
@@ -82,6 +84,7 @@ def generate_users(count: int, event_id: str = "1001") -> None:
             "queuePosition": padded,
             "queuePK": queue_item["PK"],
             "queueSK": queue_item["SK"],
+            "queueShard": queue_shard,
             "status": STATUS_WAITING,
             "estimatedWait": estimated_wait,
             "createdAt": now,

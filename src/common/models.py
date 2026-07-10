@@ -25,6 +25,7 @@ from common.constants import (
     GSI3SK,
     METADATA_SK,
     QUEUE_PREFIX,
+    QUEUE_SHARD_PREFIX,
     QUEUE_POSITION_PAD_LENGTH,
     STATS_SK,
     TOKEN_PREFIX,
@@ -111,6 +112,7 @@ class QueueEntry:
     admission_time: str = ""
     created_at: str = ""
     updated_at: str = ""
+    queue_shard: int = 0
 
     def to_item(self) -> dict[str, Any]:
         """Serialize to a DynamoDB item dictionary."""
@@ -120,11 +122,12 @@ class QueueEntry:
             else str(self.queue_position)
         )
         return {
-            "PK": f"{EVENT_PREFIX}{self.event_id}",
+            "PK": f"{EVENT_PREFIX}{self.event_id}#{QUEUE_SHARD_PREFIX}{self.queue_shard:02d}",
             "SK": f"{QUEUE_PREFIX}{padded_position}",
             "entityType": ENTITY_QUEUE,
             "eventId": self.event_id,
             "userId": self.user_id,
+            "queueShard": self.queue_shard,
             "queuePosition": self.queue_position,
             "status": self.status,
             "joinTime": self.join_time,
@@ -136,7 +139,7 @@ class QueueEntry:
             GSI1PK: f"{USER_PREFIX}{self.user_id}",
             GSI1SK: f"{EVENT_PREFIX}{self.event_id}",
             # GSI3 — Admin Queue View (status-based sort)
-            GSI3PK: f"{EVENT_PREFIX}{self.event_id}",
+            GSI3PK: f"{EVENT_PREFIX}{self.event_id}#{QUEUE_SHARD_PREFIX}{self.queue_shard:02d}",
             GSI3SK: f"STATUS#{self.status}#{padded_position}",
         }
 
@@ -153,6 +156,7 @@ class QueueEntry:
             admission_time=item.get("admissionTime", ""),
             created_at=item.get("createdAt", ""),
             updated_at=item.get("updatedAt", ""),
+            queue_shard=int(item.get("queueShard", 0)),
         )
 
     def to_api_response(self) -> dict[str, Any]:

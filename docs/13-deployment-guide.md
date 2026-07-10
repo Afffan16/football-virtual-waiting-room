@@ -266,6 +266,7 @@ sam deploy --parameter-overrides \
   StageName=Prod \
   TokenTTLMinutes=15 \
   DefaultBatchSize=50 \
+  QueueShardCount=16 \
   AdminApiKey="$(openssl rand -hex 32)"
 ```
 
@@ -276,6 +277,7 @@ sam deploy --parameter-overrides \
 | `TOKEN_TTL_MINUTES` | `15` | Admission token lifetime |
 | `SESSION_TTL_MINUTES` | `30` | Session lifetime |
 | `DEFAULT_BATCH_SIZE` | `50` | Admit batch size when not specified |
+| `QUEUE_SHARD_COUNT` | `16` | Event queue write shards used to avoid hot partitions |
 | `ADMIN_EMAIL` | `admin123@gmail.com` | Demo admin email |
 | `ADMIN_PASSWORD` | `admin123` | Demo admin password |
 | `ADMIN_API_KEY` | *(empty)* | Optional API-key admin path |

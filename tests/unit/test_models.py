@@ -82,11 +82,12 @@ class TestQueueEntryModel:
             join_time="2026-07-08T12:00:00Z",
         )
         item = entry.to_item()
-        assert item["PK"] == "EVENT#1001"
+        assert item["PK"] == "EVENT#1001#SHARD#00"
         assert item["SK"] == "QUEUE#0000000005"
+        assert item["queueShard"] == 0
         assert item["GSI1PK"] == "USER#user_001"
         assert item["GSI1SK"] == "EVENT#1001"
-        assert item["GSI3PK"] == "EVENT#1001"
+        assert item["GSI3PK"] == "EVENT#1001#SHARD#00"
         assert item["GSI3SK"] == "STATUS#WAITING#0000000005"
 
     def test_from_item(self) -> None:

@@ -74,7 +74,7 @@ flowchart TD
 | **1. Event** | A football match | Event ID, Match Name, Stadium, Capacity, Start Time, Queue Status | `EVENT#1001` |
 | **2. User** | A registered customer | User ID, Name, Email | — (global entity, may join multiple events) |
 | **3. Queue Registration Guard** | A user's active registration for one event | User ID, Event ID, Queue Row Key, Status | `USER#<id> / QUEUE#EVENT#<eventId>` |
-| **4. Queue Entry** | A user's position in a specific event's queue | Queue Position, Join Time, Status, Estimated Wait, Shard ID, Admission Time | `QUEUE#<timestamp>#<uuid>` |
+| **4. Queue Entry** | A user's position in a specific event's queue | Queue Position, Join Time, Status, Estimated Wait, Queue Shard, Admission Time | `EVENT#<id>#SHARD#<n> / QUEUE#<timestamp>#<uuid>` |
 | **5. Admission Token** | Issued when a user is admitted | Token ID, User ID, Event ID, Expiration, Status | `TOKEN#<id>` |
 | **6. Session** | An active waiting-room session | Session ID, Last Activity, Device ID, TTL | `SESSION#ACTIVE` |
 | **7. Queue Statistics** | Aggregate counters | Users Waiting, Users Admitted, Users Closed, Queue Length, Average Wait Time | `STATS` / `STATS#SHARD#<n>` |
@@ -211,19 +211,19 @@ TTL is enabled for:
 
 ## Sharding Strategy
 
-To avoid hot partitions when millions of users join the same event, queue entries can be distributed across logical write shards:
+To avoid hot partitions when millions of users join the same event, queue entries are distributed across logical write shards:
 
 ```
 EVENT#1001#SHARD#01
 EVENT#1001#SHARD#02
 EVENT#1001#SHARD#03
 ...
-EVENT#1001#SHARD#20
+EVENT#1001#SHARD#15
 ```
 
-Users are assigned to a shard using a deterministic hashing strategy (for example, based on User ID).
+Users are assigned to a shard using deterministic hashing of event ID + user ID. The registration guard stores the exact `queuePK` and `queueSK`, so status and leave operations can fetch the row directly without querying every shard.
 
-**Benefits:** even write distribution, improved throughput, better adaptive capacity. This is a *future-ready* extension point, not required for the initial implementation — see [`05-table-schema.md#future-scalability`](05-table-schema.md#future-scalability) for how the key structure supports this without an API contract change.
+**Benefits:** even write distribution, improved throughput, better adaptive capacity. GSI3 uses the same shard key, and admission/admin listing query all shards and merge by `queuePosition` to preserve global timestamp ordering.
 
 ---
 

@@ -29,6 +29,8 @@ from common.constants import (
     PROFILE_SK,
     QUEUE_POSITION_PAD_LENGTH,
     QUEUE_PREFIX,
+    QUEUE_SHARD_COUNT,
+    QUEUE_SHARD_PREFIX,
     SESSION_ACTIVE_SK,
     SESSION_PREFIX,
     SESSION_TTL_MINUTES,
@@ -61,6 +63,9 @@ class TestKeyPrefixes:
 
     def test_queue_prefix(self) -> None:
         assert QUEUE_PREFIX == "QUEUE#"
+
+    def test_queue_shard_prefix(self) -> None:
+        assert QUEUE_SHARD_PREFIX == "SHARD#"
 
     def test_token_prefix(self) -> None:
         assert TOKEN_PREFIX == "TOKEN#"
@@ -127,6 +132,9 @@ class TestDefaults:
 
     def test_queue_pad_length(self) -> None:
         assert QUEUE_POSITION_PAD_LENGTH == 10
+
+    def test_queue_shard_count(self) -> None:
+        assert QUEUE_SHARD_COUNT >= 2
 
     def test_estimated_seconds_positive(self) -> None:
         assert ESTIMATED_SECONDS_PER_POSITION > 0

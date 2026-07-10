@@ -27,6 +27,8 @@ from common.constants import (
     GSI1_NAME,
     GSI3_NAME,
     METADATA_SK,
+    QUEUE_SHARD_COUNT,
+    QUEUE_SHARD_PREFIX,
     QUEUE_PREFIX,
     QUEUE_REGISTRATION_PREFIX,
     STATS_SHARD_COUNT,
@@ -299,6 +301,22 @@ def stats_shard_id(seed: str) -> int:
     return int(digest, 16) % STATS_SHARD_COUNT
 
 
+def queue_shard_id(seed: str) -> int:
+    """Return a stable queue shard number for an event/user seed."""
+    digest = hashlib.md5(seed.encode("utf-8")).hexdigest()
+    return int(digest, 16) % QUEUE_SHARD_COUNT
+
+
+def queue_shard_pk(event_id: str, shard: int) -> str:
+    """Return the sharded partition key for queue entries in one event."""
+    return f"{EVENT_PREFIX}{event_id}#{QUEUE_SHARD_PREFIX}{shard:02d}"
+
+
+def queue_gsi3_pk(event_id: str, shard: int) -> str:
+    """Return the sharded admin/admission GSI partition key."""
+    return queue_shard_pk(event_id, shard)
+
+
 def increment_stats(
     event_id: str,
     increments: dict[str, int],
@@ -430,27 +448,43 @@ def query_user_queue(user_id: str, event_id: str) -> Optional[dict[str, Any]]:
     return registration
 
 
+def _query_sharded_queue_entries(
+    event_id: str,
+    status: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Return queue entries from all queue shards, merged by index sort key."""
+    from boto3.dynamodb.conditions import Key
+
+    prefix = f"STATUS#{status}#" if status else "STATUS#"
+    gsi_partition_keys = [f"{EVENT_PREFIX}{event_id}"] + [
+        queue_gsi3_pk(event_id, shard)
+        for shard in range(QUEUE_SHARD_COUNT)
+    ]
+    items: list[dict[str, Any]] = []
+
+    for gsi_pk in gsi_partition_keys:
+        items.extend(
+            query_items(
+                key_condition=(
+                    Key("GSI3PK").eq(gsi_pk)
+                    & Key("GSI3SK").begins_with(prefix)
+                ),
+                index_name=GSI3_NAME,
+                limit=limit,
+            )
+        )
+
+    items.sort(key=lambda item: item.get("GSI3SK", ""))
+    return items[:limit]
+
+
 def query_waiting_users(
     event_id: str,
     limit: int = 50,
 ) -> list[dict[str, Any]]:
-    """Retrieve the next batch of WAITING users from the queue,
-    ordered by queue position (sort key).
-
-    Uses the base table — queries items where PK = EVENT#<id> and
-    SK begins_with QUEUE#, then filters for WAITING status.
-    """
-    from boto3.dynamodb.conditions import Attr, Key
-
-    return query_items(
-        key_condition=(
-            Key("PK").eq(f"{EVENT_PREFIX}{event_id}")
-            & Key("SK").begins_with(QUEUE_PREFIX)
-        ),
-        limit=limit,
-        scan_index_forward=True,
-        filter_expression=Attr("status").eq("WAITING"),
-    )
+    """Retrieve the next batch of WAITING users across all queue shards."""
+    return _query_sharded_queue_entries(event_id, status=STATUS_WAITING, limit=limit)
 
 
 def query_queue_entries(
@@ -458,18 +492,8 @@ def query_queue_entries(
     status: str | None = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
-    """Return queue entries for admin views using GSI3."""
-    from boto3.dynamodb.conditions import Key
-
-    prefix = f"STATUS#{status}#" if status else "STATUS#"
-    return query_items(
-        key_condition=(
-            Key("GSI3PK").eq(f"{EVENT_PREFIX}{event_id}")
-            & Key("GSI3SK").begins_with(prefix)
-        ),
-        index_name=GSI3_NAME,
-        limit=limit,
-    )
+    """Return queue entries for admin views using sharded GSI3 partitions."""
+    return _query_sharded_queue_entries(event_id, status=status, limit=limit)
 
 
 def close_waiting_registrations(event_id: str, max_items: int = 100000) -> int:
@@ -494,8 +518,8 @@ def close_waiting_registrations(event_id: str, max_items: int = 100000) -> int:
                 continue
 
             updated = update_item(
-                pk=f"{EVENT_PREFIX}{event_id}",
-                sk=f"{QUEUE_PREFIX}{queue_position}",
+                pk=item.get("PK", f"{EVENT_PREFIX}{event_id}"),
+                sk=item.get("SK", f"{QUEUE_PREFIX}{queue_position}"),
                 update_expression=(
                     "SET #status = :new_status, updatedAt = :now, GSI3SK = :gsi3sk "
                     "REMOVE #gsi1pk, #gsi1sk"

@@ -29,6 +29,9 @@ from common.dynamodb import (
     get_event_stats,
     get_item,
     increment_stats,
+    queue_gsi3_pk,
+    queue_shard_id,
+    queue_shard_pk,
     query_user_queue,
     transact_put_items,
 )
@@ -86,13 +89,15 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         new_position = generate_queue_position()
         estimated_wait = estimate_wait_minutes(new_position)
         now = utc_now_iso()
+        queue_shard = queue_shard_id(f"{event_id}#{user_id}")
 
         queue_item: dict[str, Any] = {
-            "PK": f"{EVENT_PREFIX}{event_id}",
+            "PK": queue_shard_pk(event_id, queue_shard),
             "SK": f"{QUEUE_PREFIX}{new_position}",
             "entityType": ENTITY_QUEUE,
             "eventId": event_id,
             "userId": user_id,
+            "queueShard": queue_shard,
             "queuePosition": new_position,
             "status": STATUS_WAITING,
             "joinTime": now,
@@ -102,7 +107,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "updatedAt": now,
             GSI1PK: f"{USER_PREFIX}{user_id}",
             GSI1SK: f"{EVENT_PREFIX}{event_id}",
-            GSI3PK: f"{EVENT_PREFIX}{event_id}",
+            GSI3PK: queue_gsi3_pk(event_id, queue_shard),
             GSI3SK: f"STATUS#{STATUS_WAITING}#{new_position}",
         }
 
@@ -115,6 +120,7 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "queuePosition": new_position,
             "queuePK": queue_item["PK"],
             "queueSK": queue_item["SK"],
+            "queueShard": queue_shard,
             "status": STATUS_WAITING,
             "estimatedWait": estimated_wait,
             "createdAt": now,
