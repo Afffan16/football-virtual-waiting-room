@@ -16,6 +16,7 @@
 [Overview](#-overview) •
 [Architecture](#-architecture) •
 [Data Model](#-data-model) •
+[Workbench Model](nosql-workbench/football-waiting-room-data-model.json) •
 [API](#-api-reference) •
 [Getting Started](#-getting-started) •
 [Deployment](#-deployment) •
@@ -174,6 +175,8 @@ The entire application lives in **one DynamoDB table** (`FootballWaitingRoom`), 
 | **GSI1** | `USER#<id>` → `EVENT#<id>` | "What's my queue status?" / resume session |
 | **GSI2** | `TOKEN#<id>` | Fast admission-token validation before checkout |
 | **GSI3** | `EVENT#<id>` → `STATUS#<state>` | Admin dashboards, ordered admission batches |
+
+> 🗺️ **NoSQL Workbench export:** the full data model — table, GSI1–GSI3, and sample items — is available as an importable JSON file at [`nosql-workbench/football-waiting-room-data-model.json`](nosql-workbench/football-waiting-room-data-model.json).
 
 Full rationale in [`docs/06-index-design.md`](docs/06-index-design.md).
 
