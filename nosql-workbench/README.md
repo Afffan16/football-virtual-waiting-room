@@ -12,4 +12,7 @@ The model mirrors `template.yaml`:
 - Primary key: `PK` + `SK`
 - GSIs: `GSI1`, `GSI2`, `GSI3`
 - LSIs: none, because the deployed table does not define any
-- Sample data: at least five table items and five sample projected items for each GSI
+- CloudFormation-compatible key catalog: `AttributeDefinitions` includes only `PK`, `SK`, and the GSI key attributes defined in `template.yaml`
+- Workbench base-table non-key catalog: projected attributes such as `queuePosition`, `status`, `joinTime`, `estimatedWait`, `eventId`, `userId`, `entityType`, `tokenId`, and `expiresAt`
+- Sample data: 15 full base table items, with at least five base items carrying the key attributes for each GSI
+- GSI coverage is derived from full base table items, not separate index-only rows

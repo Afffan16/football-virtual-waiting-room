@@ -82,7 +82,7 @@ It includes:
 - Primary key: `PK` + `SK`
 - GSIs: `GSI1`, `GSI2`, `GSI3`
 - LSIs: none, explicitly declared as `LocalSecondaryIndexes: []`
-- Sample data: at least five sample items for the table and for each GSI
+- Sample data: at least five base table items for the table and at least five base items carrying each GSI's key attributes
 
 ---
 
