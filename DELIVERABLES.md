@@ -7,6 +7,18 @@
 
 **Submitted by:** Muhammad Affan bin Aamir · AWS Student Builder Group Leader
 
+[Table Design](#deliverable-1--dynamodb-table-design) •
+[Queue Fairness](#deliverable-2--fair-queue-position-assignment) •
+[Batch Promotion](#deliverable-3--batch-promotion-strategy) •
+[Status Queries](#deliverable-4--fan-status-query-design) •
+[Stretch Goal](#deliverable-5--stretch-goal-1000-slot-active-purchaser-cap)
+
+<br>
+
+[![Workbench Data Model](https://img.shields.io/badge/🗺️_Workbench_Data_Model-JSON_Export-4053D6?style=for-the-badge)](nosql-workbench/football-waiting-room-data-model.json)
+[![Design Doc](https://img.shields.io/badge/📐_Design_Doc-Table_Schema-FF9900?style=for-the-badge)](docs/05-table-schema.md)
+[![Access Patterns](https://img.shields.io/badge/🔎_Access_Patterns-docs%2F03-232F3E?style=for-the-badge)](docs/03-access-patterns.md)
+
 </div>
 
 ---
@@ -62,11 +74,11 @@ A **Single Table Design** (`FootballWaitingRoom`) storing six entity types in on
 **Table configuration:** On-Demand billing · DynamoDB Streams (`NEW_AND_OLD_IMAGES`) · TTL on `ttl` attribute · Point-in-Time Recovery · Server-Side Encryption.
 
 **Key files:**
-- Schema definition: [`docs/05-table-schema.md`](docs/05-table-schema.md)
+- 📐 Design doc (schema definition): [`docs/05-table-schema.md`](docs/05-table-schema.md)
 - Data model reasoning: [`docs/04-data-model.md`](docs/04-data-model.md)
 - Infrastructure as Code: [`template.yaml`](template.yaml)
 - DynamoDB models: [`src/common/models.py`](src/common/models.py)
-- NoSQL Workbench export: [`nosql-workbench/football-waiting-room-data-model.json`](nosql-workbench/football-waiting-room-data-model.json)
+- 🗺️ NoSQL Workbench export: [`nosql-workbench/football-waiting-room-data-model.json`](nosql-workbench/football-waiting-room-data-model.json)
 
 ### NoSQL Workbench Export
 
@@ -114,7 +126,7 @@ The position string is **lexicographically sortable**, so DynamoDB's native sort
 **Key files:**
 - Position generation: [`src/common/utils.py`](src/common/utils.py) → `generate_queue_position()`
 - Join handler: [`src/join_queue/app.py`](src/join_queue/app.py)
-- Access pattern analysis: [`docs/03-access-patterns.md`](docs/03-access-patterns.md)
+- 🔎 Access pattern analysis: [`docs/03-access-patterns.md`](docs/03-access-patterns.md)
 
 ---
 
@@ -275,8 +287,10 @@ The challenge asked for a data model. This submission delivers a **fully deploye
 
 | File / Folder | What it is |
 |---|---|
+| [`nosql-workbench/football-waiting-room-data-model.json`](nosql-workbench/football-waiting-room-data-model.json) | 🗺️ Workbench Data Model — importable NoSQL Workbench JSON export |
+| [`docs/05-table-schema.md`](docs/05-table-schema.md) | 📐 Design Doc — physical PK/SK table schema |
+| [`docs/03-access-patterns.md`](docs/03-access-patterns.md) | 🔎 Access Patterns — every query the app needs to serve |
 | [`template.yaml`](template.yaml) | SAM infrastructure — DynamoDB, Lambda, API Gateway |
-| [`nosql-workbench/`](nosql-workbench/) | NoSQL Workbench DynamoDB data model JSON export |
 | [`src/`](src/) | All Lambda handlers + shared common library |
 | [`docs/`](docs/) | 13-document engineering log |
 | [`frontend/`](frontend/) | Live SPA connected to the deployed API |
