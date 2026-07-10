@@ -459,18 +459,6 @@ Full breakdown: [`docs/10-cost-estimation.md`](docs/10-cost-estimation.md).
 
 ---
 
-## 🗺️ Roadmap
-
-- [ ] Push-based queue updates via WebSocket / SSE (replace polling)
-- [ ] Multi-region deployment with DynamoDB Global Tables
-- [ ] Write sharding for extreme-scale events (`EVENT#id#SHARD#n`)
-- [ ] Lambda Authorizer / Cognito for verified user identity
-- [ ] Move admin key to AWS Secrets Manager
-- [ ] Redis/ElastiCache layer for hot read paths
-- [ ] Real-time analytics dashboard
-
----
-
 ## 🤝 Contributing
 
 Fork, branch, write tests, and open a PR. See [`CONTRIBUTING.MD`](CONTRIBUTING.MD) for coding standards and the PR checklist.
