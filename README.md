@@ -22,10 +22,10 @@
 [Testing](#-testing) •
 [Docs](#-full-documentation)
 
-### 🔗 Live Demo
+<br>
 
-**S3 Website:** http://football-waiting-room-affan.s3-website-us-east-1.amazonaws.com/
-**CloudFront (recommended):** https://ddwi3zvh6b39d.cloudfront.net/
+[![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-CloudFront-0089D6?style=for-the-badge)](https://ddwi3zvh6b39d.cloudfront.net/)
+[![S3 Origin](https://img.shields.io/badge/S3_Static_Site-Origin-FF9900?style=for-the-badge&logo=amazons3&logoColor=white)](http://football-waiting-room-affan.s3-website-us-east-1.amazonaws.com/)
 
 </div>
 
@@ -84,9 +84,7 @@ A glassmorphism dark-themed **Single Page Application** with four views:
 
 Files: `frontend/index.html`, `frontend/styles.css`, `frontend/app.js`
 
-**Live:**
-- CloudFront (HTTPS, cached): https://ddwi3zvh6b39d.cloudfront.net/
-- S3 static website hosting (origin): http://football-waiting-room-affan.s3-website-us-east-1.amazonaws.com/
+> **▶ Try it live:** **[ddwi3zvh6b39d.cloudfront.net](https://ddwi3zvh6b39d.cloudfront.net/)**
 
 To run locally: open `frontend/index.html` in a browser, or serve with `python -m http.server 8080 --directory frontend`.
 
@@ -376,11 +374,15 @@ sam deploy --parameter-overrides AdminApiKey="$(openssl rand -hex 32)"
 
 ### 🌐 Live Environment
 
-| Resource | URL |
-|---|---|
-| **CloudFront (frontend, HTTPS)** | https://ddwi3zvh6b39d.cloudfront.net/ |
-| **S3 static website (frontend origin)** | http://football-waiting-room-affan.s3-website-us-east-1.amazonaws.com/ |
-| **API Gateway (backend)** | https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod |
+<div align="center">
+
+| Layer | Service | URL |
+|:---|:---|:---|
+| 🖥️ Frontend | CloudFront *(HTTPS, cached — recommended)* | **[ddwi3zvh6b39d.cloudfront.net](https://ddwi3zvh6b39d.cloudfront.net/)** |
+| 🪣 Frontend origin | S3 static website hosting | [football-waiting-room-affan.s3-website-us-east-1.amazonaws.com](http://football-waiting-room-affan.s3-website-us-east-1.amazonaws.com/) |
+| ⚙️ Backend | API Gateway (REST) | [n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod](https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod) |
+
+</div>
 
 ### Redeploying frontend changes
 
