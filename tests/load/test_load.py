@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from tests.conftest import MockLambdaContext, make_apigw_event
+from tests.conftest import MockLambdaContext, make_admin_apigw_event, make_apigw_event
 
 
 class TestLoadJoinQueue:
@@ -48,7 +48,8 @@ class TestLoadJoinQueue:
             event = make_apigw_event(body={"eventId": "1001", "userId": f"stat_user_{i:04d}"})
             lambda_handler(event, lambda_context)
 
-        stats = seeded_table.get_item(Key={"PK": "EVENT#1001", "SK": "STATS"})["Item"]
+        from src.common.dynamodb import get_event_stats
+        stats = get_event_stats("1001")
         assert int(stats["totalUsers"]) == count
         assert int(stats["waitingUsers"]) == count
 
@@ -70,7 +71,7 @@ class TestLoadAdmitUsers:
 
         total_admitted = 0
         for _ in range(total // batch_size):
-            event = make_apigw_event(body={"eventId": "1001", "batchSize": batch_size})
+            event = make_admin_apigw_event(body={"eventId": "1001", "batchSize": batch_size})
             response = admit_handler(event, lambda_context)
             body = json.loads(response["body"])
             total_admitted += body["admittedUsers"]
@@ -78,7 +79,8 @@ class TestLoadAdmitUsers:
         assert total_admitted == total
 
         # Verify stats
-        stats = seeded_table.get_item(Key={"PK": "EVENT#1001", "SK": "STATS"})["Item"]
+        from src.common.dynamodb import get_event_stats
+        stats = get_event_stats("1001")
         assert int(stats["admittedUsers"]) == total
 
 
@@ -98,7 +100,7 @@ class TestLoadEndToEndFlow:
             assert response["statusCode"] == 201
 
         # 2. Admit all
-        admit_event = make_apigw_event(body={"eventId": "1001", "batchSize": 10})
+        admit_event = make_admin_apigw_event(body={"eventId": "1001", "batchSize": 10})
         admit_response = admit_handler(admit_event, lambda_context)
         admit_body = json.loads(admit_response["body"])
         assert admit_body["admittedUsers"] == 10

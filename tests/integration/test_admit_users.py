@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from tests.conftest import MockLambdaContext, make_apigw_event
+from tests.conftest import MockLambdaContext, make_admin_apigw_event, make_apigw_event
 
 
 def _join_users(seeded_table: Any, lambda_context: MockLambdaContext, count: int = 5) -> None:
@@ -27,7 +27,7 @@ class TestAdmitUsersHandler:
 
         _join_users(seeded_table, lambda_context, count=3)
 
-        event = make_apigw_event(body={"eventId": "1001", "batchSize": 2})
+        event = make_admin_apigw_event(body={"eventId": "1001", "batchSize": 2})
         response = lambda_handler(event, lambda_context)
 
         assert response["statusCode"] == 200
@@ -39,7 +39,7 @@ class TestAdmitUsersHandler:
     def test_admit_users_no_waiting(self, seeded_table: Any, lambda_context: MockLambdaContext) -> None:
         from admit_users.app import lambda_handler
 
-        event = make_apigw_event(body={"eventId": "1001", "batchSize": 5})
+        event = make_admin_apigw_event(body={"eventId": "1001", "batchSize": 5})
         response = lambda_handler(event, lambda_context)
 
         assert response["statusCode"] == 200
@@ -49,7 +49,7 @@ class TestAdmitUsersHandler:
     def test_admit_users_missing_event_id(self, seeded_table: Any, lambda_context: MockLambdaContext) -> None:
         from admit_users.app import lambda_handler
 
-        event = make_apigw_event(body={"batchSize": 5})
+        event = make_admin_apigw_event(body={"batchSize": 5})
         response = lambda_handler(event, lambda_context)
         assert response["statusCode"] == 400
 
@@ -58,7 +58,7 @@ class TestAdmitUsersHandler:
 
         _join_users(seeded_table, lambda_context, count=1)
 
-        event = make_apigw_event(body={"eventId": "1001", "batchSize": 1})
+        event = make_admin_apigw_event(body={"eventId": "1001", "batchSize": 1})
         lambda_handler(event, lambda_context)
 
         # Scan for TOKEN items
@@ -73,10 +73,11 @@ class TestAdmitUsersHandler:
 
         _join_users(seeded_table, lambda_context, count=3)
 
-        event = make_apigw_event(body={"eventId": "1001", "batchSize": 3})
+        event = make_admin_apigw_event(body={"eventId": "1001", "batchSize": 3})
         lambda_handler(event, lambda_context)
 
-        stats = seeded_table.get_item(Key={"PK": "EVENT#1001", "SK": "STATS"})["Item"]
+        from common.dynamodb import get_event_stats
+        stats = get_event_stats("1001")
         assert int(stats["admittedUsers"]) == 3
 
     def test_admit_all_then_admit_again(self, seeded_table: Any, lambda_context: MockLambdaContext) -> None:
@@ -85,7 +86,7 @@ class TestAdmitUsersHandler:
         _join_users(seeded_table, lambda_context, count=2)
 
         # Admit all
-        event = make_apigw_event(body={"eventId": "1001", "batchSize": 10})
+        event = make_admin_apigw_event(body={"eventId": "1001", "batchSize": 10})
         r1 = lambda_handler(event, lambda_context)
         body1 = json.loads(r1["body"])
         assert body1["admittedUsers"] == 2

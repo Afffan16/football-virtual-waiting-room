@@ -21,7 +21,7 @@ class TestJoinQueueHandler:
 
         assert response["statusCode"] == 201
         body = json.loads(response["body"])
-        assert body["queuePosition"] == 1
+        assert isinstance(body["queuePosition"], str)
         assert body["status"] == "WAITING"
         assert "estimatedWaitMinutes" in body
 
@@ -100,7 +100,8 @@ class TestJoinQueueHandler:
         event = make_apigw_event(body={"eventId": "1001", "userId": "user_001"})
         lambda_handler(event, lambda_context)
 
-        # Check stats were updated
-        stats = seeded_table.get_item(Key={"PK": "EVENT#1001", "SK": "STATS"})["Item"]
+        # Check sharded aggregate stats were updated
+        from common.dynamodb import get_event_stats
+        stats = get_event_stats("1001")
         assert int(stats["totalUsers"]) >= 1
         assert int(stats["waitingUsers"]) >= 1

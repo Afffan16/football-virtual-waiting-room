@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from tests.conftest import MockLambdaContext, make_apigw_event
+from tests.conftest import MockLambdaContext, make_admin_apigw_event, make_apigw_event
 
 
 class TestJoinQueueApiContract:
@@ -29,7 +29,7 @@ class TestJoinQueueApiContract:
         assert "queuePosition" in body
         assert "status" in body
         assert "estimatedWaitMinutes" in body
-        assert isinstance(body["queuePosition"], int)
+        assert isinstance(body["queuePosition"], str)
         assert isinstance(body["estimatedWaitMinutes"], int)
 
     def test_error_response_shape(self, seeded_table: Any, lambda_context: MockLambdaContext) -> None:
@@ -133,7 +133,7 @@ class TestAdmitUsersApiContract:
     def test_success_response_shape(self, seeded_table: Any, lambda_context: MockLambdaContext) -> None:
         from src.admit_users.app import lambda_handler
 
-        event = make_apigw_event(body={"eventId": "1001", "batchSize": 5})
+        event = make_admin_apigw_event(body={"eventId": "1001", "batchSize": 5})
         response = lambda_handler(event, lambda_context)
 
         body = json.loads(response["body"])

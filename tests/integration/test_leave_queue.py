@@ -71,5 +71,6 @@ class TestLeaveQueueHandler:
         event = make_apigw_event(body={"eventId": "1001", "userId": "user_001"})
         lambda_handler(event, lambda_context)
 
-        stats = seeded_table.get_item(Key={"PK": "EVENT#1001", "SK": "STATS"})["Item"]
+        from common.dynamodb import get_event_stats
+        stats = get_event_stats("1001")
         assert int(stats["cancelledUsers"]) >= 1

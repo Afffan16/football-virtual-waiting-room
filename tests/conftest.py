@@ -36,6 +36,8 @@ def _set_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SESSION_TTL_MINUTES", "30")
     monkeypatch.setenv("DEFAULT_BATCH_SIZE", "50")
     monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+    monkeypatch.setenv("ADMIN_EMAIL", "admin123@gmail.com")
+    monkeypatch.setenv("ADMIN_PASSWORD", "admin123")
 
 
 # ---------------------------------------------------------------------------
@@ -105,10 +107,19 @@ def dynamodb_table() -> Generator[Any, None, None]:
         dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
         table = _create_table(dynamodb)
 
-        # Patch the shared table reference used by all Lambda functions
-        import src.common.dynamodb as db_module
-        db_module._dynamodb = dynamodb
-        db_module._table = table
+        # Patch both import paths used by runtime and tests.
+        import common.dynamodb as common_db_module
+        import src.common.dynamodb as src_db_module
+
+        for db_module in (common_db_module, src_db_module):
+            db_module.TABLE_NAME = TABLE_NAME
+            db_module._dynamodb = dynamodb
+            db_module._table = table
+
+        for module_name in ("join_queue.app", "src.join_queue.app"):
+            module = sys.modules.get(module_name)
+            if module and hasattr(module, "_event_cache"):
+                module._event_cache.clear()
 
         yield table
 
@@ -161,11 +172,12 @@ def make_apigw_event(
     path_parameters: dict[str, str] | None = None,
     query_string_parameters: dict[str, str] | None = None,
     http_method: str = "POST",
+    headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build a minimal API Gateway proxy integration event."""
     event: dict[str, Any] = {
         "httpMethod": http_method,
-        "headers": {"Content-Type": "application/json"},
+        "headers": {"Content-Type": "application/json", **(headers or {})},
         "pathParameters": path_parameters,
         "queryStringParameters": query_string_parameters,
         "body": json.dumps(body) if body else None,
@@ -175,6 +187,25 @@ def make_apigw_event(
         },
     }
     return event
+
+
+def make_admin_apigw_event(
+    body: dict[str, Any] | None = None,
+    path_parameters: dict[str, str] | None = None,
+    query_string_parameters: dict[str, str] | None = None,
+    http_method: str = "POST",
+) -> dict[str, Any]:
+    """Build an API Gateway event carrying demo admin login credentials."""
+    return make_apigw_event(
+        body=body,
+        path_parameters=path_parameters,
+        query_string_parameters=query_string_parameters,
+        http_method=http_method,
+        headers={
+            "x-admin-email": "admin123@gmail.com",
+            "x-admin-password": "admin123",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -198,4 +229,3 @@ class MockLambdaContext:
 def lambda_context() -> MockLambdaContext:
     """Provide a mock Lambda context for handler invocations."""
     return MockLambdaContext()
-

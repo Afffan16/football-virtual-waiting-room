@@ -1,15 +1,7 @@
 """
-Join Queue Lambda — Registers a user in the Football Virtual Waiting Room.
+Join Queue Lambda - registers a user in the Football Virtual Waiting Room.
 
 Endpoint: POST /queue/join
-
-This function:
-  1. Validates the request body (eventId, userId required).
-  2. Verifies the event exists and its queue is OPEN.
-  3. Uses an atomic counter on the STATS item to assign the next queue position.
-  4. Writes the queue entry with a conditional expression to prevent duplicates.
-  5. Updates the aggregate statistics (waitingUsers, totalUsers).
-  6. Returns HTTP 201 with the assigned queue position.
 """
 
 from __future__ import annotations
@@ -18,7 +10,7 @@ from typing import Any
 
 from common.constants import (
     ENTITY_QUEUE,
-    ENTITY_STATS,
+    ENTITY_QUEUE_REGISTRATION,
     EVENT_OPEN,
     EVENT_PREFIX,
     GSI1PK,
@@ -26,18 +18,16 @@ from common.constants import (
     GSI3PK,
     GSI3SK,
     QUEUE_PREFIX,
-    QUEUE_POSITION_PAD_LENGTH,
-    STATS_SK,
+    QUEUE_REGISTRATION_PREFIX,
     STATUS_WAITING,
     USER_PREFIX,
 )
 from common.dynamodb import (
-    atomic_increment,
     get_event,
     get_item,
-    put_item,
+    increment_stats,
     query_user_queue,
-    update_item,
+    transact_put_items,
 )
 from common.logger import logger
 from common.responses import bad_request, conflict, created, forbidden, internal_error, not_found
@@ -49,12 +39,22 @@ from common.utils import (
     validate_required_fields,
 )
 
+_event_cache: dict[str, dict[str, Any]] = {}
+
+
+def _get_cached_event(event_id: str) -> dict[str, Any] | None:
+    """Return event metadata, caching it across warm Lambda invocations."""
+    if event_id not in _event_cache:
+        item = get_event(event_id)
+        if item:
+            _event_cache[event_id] = item
+    return _event_cache.get(event_id)
+
 
 @logger.inject_lambda_context(log_event=True)
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """API Gateway proxy handler for POST /queue/join."""
     try:
-        # ----- Parse & validate -----
         body = parse_body(event)
         validation_error = validate_required_fields(body, ["eventId", "userId"])
         if validation_error:
@@ -63,15 +63,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         event_id: str = body["eventId"]
         user_id: str = body["userId"]
 
-        # ----- Sanitize input lengths -----
         if len(event_id) > 64 or len(user_id) > 128:
             return bad_request("eventId or userId exceeds maximum allowed length.")
 
         logger.append_keys(eventId=event_id, userId=user_id)
         logger.info("Processing join queue request")
 
-        # ----- Verify event exists and is open -----
-        event_item = get_event(event_id)
+        event_item = _get_cached_event(event_id)
         if not event_item:
             return not_found(f"Event '{event_id}' not found.")
 
@@ -79,34 +77,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if event_status != EVENT_OPEN:
             return forbidden(f"Event '{event_id}' is not accepting registrations (status: {event_status}).")
 
-        # ----- Check for duplicate registration via GSI1 -----
-        existing = query_user_queue(user_id, event_id)
-        if existing:
-            logger.info("User already registered — returning existing entry")
-            return created({
-                "message": "Already registered.",
-                "queuePosition": existing.get("queuePosition", ""),
-                "status": existing.get("status", STATUS_WAITING),
-                "estimatedWaitMinutes": int(existing.get("estimatedWait", 0)),
-            })
-
-        # ----- Assign queue position via timestamp + jitter -----
-        stats_pk = f"{EVENT_PREFIX}{event_id}"
         new_position = generate_queue_position()
-
-        # ----- Estimate wait -----
-        currently_serving = ""
-        stats_item = get_item(stats_pk, STATS_SK)
-        if stats_item:
-            currently_serving = stats_item.get("currentlyServingPosition", "")
-        estimated_wait = estimate_wait_minutes(new_position, currently_serving)
-
-        # ----- Build queue item -----
+        estimated_wait = estimate_wait_minutes(new_position)
         now = utc_now_iso()
-        padded = new_position
+
         queue_item: dict[str, Any] = {
             "PK": f"{EVENT_PREFIX}{event_id}",
-            "SK": f"{QUEUE_PREFIX}{padded}",
+            "SK": f"{QUEUE_PREFIX}{new_position}",
             "entityType": ENTITY_QUEUE,
             "eventId": event_id,
             "userId": user_id,
@@ -117,24 +94,52 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             "admissionTime": "",
             "createdAt": now,
             "updatedAt": now,
-            # GSI1 — User Queue Lookup
             GSI1PK: f"{USER_PREFIX}{user_id}",
             GSI1SK: f"{EVENT_PREFIX}{event_id}",
-            # GSI3 — Admin Queue View
             GSI3PK: f"{EVENT_PREFIX}{event_id}",
-            GSI3SK: f"STATUS#{STATUS_WAITING}#{padded}",
+            GSI3SK: f"STATUS#{STATUS_WAITING}#{new_position}",
         }
 
-        # ----- Write with condition (belt-and-suspenders duplicate guard) -----
-        success = put_item(queue_item, condition_expression="attribute_not_exists(PK) AND attribute_not_exists(SK)")
-        if not success:
-            return conflict("Queue entry already exists for this position.")
+        registration_item: dict[str, Any] = {
+            "PK": f"{USER_PREFIX}{user_id}",
+            "SK": f"{QUEUE_REGISTRATION_PREFIX}{event_id}",
+            "entityType": ENTITY_QUEUE_REGISTRATION,
+            "eventId": event_id,
+            "userId": user_id,
+            "queuePosition": new_position,
+            "queuePK": queue_item["PK"],
+            "queueSK": queue_item["SK"],
+            "status": STATUS_WAITING,
+            "estimatedWait": estimated_wait,
+            "createdAt": now,
+            "updatedAt": now,
+        }
 
-        # We intentionally do not use atomic_increment for waitingUsers here
-        # to prevent hot partitions during the 10-million user stampede.
+        success = transact_put_items([
+            (registration_item, "attribute_not_exists(PK) AND attribute_not_exists(SK)"),
+            (queue_item, "attribute_not_exists(PK) AND attribute_not_exists(SK)"),
+        ])
+        if not success:
+            existing = query_user_queue(user_id, event_id)
+            if not existing:
+                existing = get_item(f"{USER_PREFIX}{user_id}", f"{QUEUE_REGISTRATION_PREFIX}{event_id}")
+            if existing:
+                logger.info("User already registered - returning existing entry")
+                return created({
+                    "message": "Already registered.",
+                    "queuePosition": existing.get("queuePosition", ""),
+                    "status": existing.get("status", STATUS_WAITING),
+                    "estimatedWaitMinutes": int(existing.get("estimatedWait", estimated_wait)),
+                })
+            return conflict("Queue registration already exists.")
+
+        increment_stats(
+            event_id,
+            {"waitingUsers": 1, "totalUsers": 1},
+            shard_seed=user_id,
+        )
 
         logger.info("User successfully joined queue", extra={"queuePosition": new_position})
-
         return created({
             "message": "Successfully joined queue.",
             "queuePosition": new_position,

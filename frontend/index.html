@@ -87,6 +87,36 @@
     </div>
 </section>
 
+<!-- ========== PAGE: USER LOGIN ========== -->
+<section class="page" id="page-user-login">
+    <div class="dashboard-container auth-container">
+        <div class="glass-card auth-card">
+            <h1 class="page-title">User Login</h1>
+            <p class="page-subtitle">Sign in with your email to receive a stable fan ID.</p>
+            <label class="input-label" for="user-login-email">Email</label>
+            <input type="email" class="input-field" id="user-login-email" placeholder="fan@example.com">
+            <label class="input-label" for="user-login-password">Password</label>
+            <input type="password" class="input-field" id="user-login-password" placeholder="Password">
+            <button class="btn btn-primary btn-full" onclick="userLogin()" id="btn-user-login">Login</button>
+        </div>
+    </div>
+</section>
+
+<!-- ========== PAGE: ADMIN LOGIN ========== -->
+<section class="page" id="page-admin-login">
+    <div class="dashboard-container auth-container">
+        <div class="glass-card auth-card">
+            <h1 class="page-title">Admin Login</h1>
+            <p class="page-subtitle">Authorized queue operators only.</p>
+            <label class="input-label" for="admin-login-email">Email</label>
+            <input type="email" class="input-field" id="admin-login-email" placeholder="admin123@gmail.com">
+            <label class="input-label" for="admin-login-password">Password</label>
+            <input type="password" class="input-field" id="admin-login-password" placeholder="Password">
+            <button class="btn btn-primary btn-full" onclick="adminLogin()" id="btn-admin-login">Login</button>
+        </div>
+    </div>
+</section>
+
 <!-- ========== PAGE: ADMIN DASHBOARD ========== -->
 <section class="page" id="page-admin">
     <div class="dashboard-container">
@@ -96,6 +126,10 @@
                 <p class="page-subtitle">Queue management and request monitoring</p>
             </div>
             <div class="header-actions">
+                <span class="session-pill" id="admin-session-label">Not signed in</span>
+                <button class="btn btn-outline" onclick="logoutAdmin()" id="btn-admin-logout">
+                    Logout
+                </button>
                 <button class="btn btn-outline" onclick="refreshAdminData()" id="btn-admin-refresh">
                     <span class="btn-icon">↻</span> Refresh
                 </button>
@@ -194,13 +228,14 @@
 
         <!-- User ID Input -->
         <div class="glass-card user-id-card">
-            <label class="input-label">Your Fan ID</label>
+            <label class="input-label">Signed In Fan</label>
             <div class="user-id-row">
-                <input type="text" class="input-field" id="global-user-id" value="FAN-001" placeholder="Enter your Fan ID (e.g. FAN-001)">
+                <div class="input-field readonly-identity" id="global-user-id">Assigned after login</div>
                 <div class="user-id-indicator">
                     <span class="indicator-dot"></span>
                     <span class="indicator-text">Active</span>
                 </div>
+                <button class="btn btn-outline btn-sm" onclick="logoutUser()" id="btn-user-logout">Logout</button>
             </div>
         </div>
 

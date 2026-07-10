@@ -60,10 +60,29 @@ def generate_queue_position() -> str:
     return f"{timestamp_ms:014d}-{jitter}"
 
 
-def estimate_wait_minutes(my_position: str, currently_serving_position: str = "") -> int:
+def format_queue_position(position: int) -> str:
+    """Format a numeric queue position for legacy callers."""
+    return str(position).zfill(QUEUE_POSITION_PAD_LENGTH)
+
+
+def estimate_wait_minutes(
+    my_position: str | int,
+    currently_serving_position: str | int = "",
+    admitted_so_far: int = 0,
+) -> int:
     """Provide an estimated wait time in minutes based on timestamp difference.
+
     If currently_serving_position is empty, we assume they are serving the queue start.
+    Numeric inputs are supported for compatibility with earlier tests and tools.
     """
+    if isinstance(my_position, int):
+        active_position = max(0, my_position - admitted_so_far)
+        seconds = active_position * ESTIMATED_SECONDS_PER_POSITION
+        return max(1, (seconds + 59) // 60)
+
+    if isinstance(currently_serving_position, int):
+        currently_serving_position = generate_queue_position()
+
     if not my_position or "-" not in my_position:
         return 0
         

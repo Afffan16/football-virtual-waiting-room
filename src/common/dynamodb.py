@@ -8,18 +8,23 @@ error handling and structured logging.
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Optional
 
 import boto3
+from boto3.dynamodb.types import TypeSerializer
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from common.constants import (
+    ENTITY_STATS,
     EVENT_PREFIX,
     GSI1_NAME,
-    GSI2_NAME,
     GSI3_NAME,
     METADATA_SK,
     QUEUE_PREFIX,
+    STATS_SHARD_COUNT,
+    STATS_SHARD_PREFIX,
     STATS_SK,
     TABLE_NAME,
     TOKEN_PREFIX,
@@ -30,8 +35,17 @@ from common.logger import logger
 # ---------------------------------------------------------------------------
 # DynamoDB Resource (reused across Lambda invocations for connection pooling)
 # ---------------------------------------------------------------------------
-_dynamodb = boto3.resource("dynamodb")
+_dynamodb = boto3.resource(
+    "dynamodb",
+    config=Config(
+        retries={
+            "max_attempts": 8,
+            "mode": "adaptive",
+        }
+    ),
+)
 _table = _dynamodb.Table(TABLE_NAME)
+_serializer = TypeSerializer()
 
 
 def get_table():
@@ -65,6 +79,52 @@ def put_item(item: dict[str, Any], condition_expression: str | None = None) -> b
         logger.exception("DynamoDB put_item error")
         raise
 
+
+def transact_put_items(items: list[tuple[dict[str, Any], str | None]]) -> bool:
+    """Write multiple items atomically.
+
+    Returns ``False`` when a transaction is cancelled by a conditional check,
+    and raises for other DynamoDB errors.
+    """
+    def _build_transact_items(serialize: bool) -> list[dict[str, Any]]:
+        transact_items: list[dict[str, Any]] = []
+        for item, condition_expression in items:
+            request_item = (
+                {key: _serializer.serialize(value) for key, value in item.items()}
+                if serialize
+                else item
+            )
+            put_request: dict[str, Any] = {
+                "TableName": TABLE_NAME,
+                "Item": request_item,
+            }
+            if condition_expression:
+                put_request["ConditionExpression"] = condition_expression
+            transact_items.append({"Put": put_request})
+        return transact_items
+
+    def _is_moto_type_error(exc: ClientError) -> bool:
+        reasons = exc.response.get("CancellationReasons", [])
+        return any(reason.get("Code") == "TypeError" for reason in reasons)
+
+    try:
+        _table.meta.client.transact_write_items(TransactItems=_build_transact_items(serialize=True))
+        return True
+    except ClientError as exc:
+        if exc.response["Error"]["Code"] == "TransactionCanceledException" and _is_moto_type_error(exc):
+            # moto currently expects plain resource-style items for transaction
+            # writes, while the real DynamoDB client expects serialized values.
+            try:
+                _table.meta.client.transact_write_items(TransactItems=_build_transact_items(serialize=False))
+                return True
+            except ClientError as retry_exc:
+                exc = retry_exc
+
+        if exc.response["Error"]["Code"] == "TransactionCanceledException":
+            logger.info("DynamoDB transact_put_items cancelled.")
+            return False
+        logger.exception("DynamoDB transact_put_items error")
+        raise
 
 def get_item(pk: str, sk: str) -> Optional[dict[str, Any]]:
     """Retrieve a single item by its composite primary key.
@@ -158,6 +218,56 @@ def atomic_increment(
     return int(response["Attributes"][attribute])
 
 
+def stats_shard_id(seed: str) -> int:
+    """Return a stable stats shard number for a user/event seed."""
+    digest = hashlib.md5(seed.encode("utf-8")).hexdigest()
+    return int(digest, 16) % STATS_SHARD_COUNT
+
+
+def increment_stats(
+    event_id: str,
+    increments: dict[str, int],
+    shard_seed: str | None = None,
+) -> Optional[dict[str, Any]]:
+    """Increment per-event counters on a sharded STATS item.
+
+    Sharding avoids making the root ``EVENT#id / STATS`` item a write hot spot
+    during high-volume queue joins.
+    """
+    if not increments:
+        return None
+
+    shard = stats_shard_id(shard_seed or event_id)
+    pk = f"{EVENT_PREFIX}{event_id}"
+    sk = f"{STATS_SHARD_PREFIX}{shard:02d}"
+
+    expression_names = {f"#n{i}": name for i, name in enumerate(increments)}
+    expression_values: dict[str, Any] = {
+        f":v{i}": value
+        for i, value in enumerate(increments.values())
+    }
+    expression_values.update({
+        ":entity": ENTITY_STATS,
+        ":eventId": event_id,
+    })
+
+    add_parts = [
+        f"{name_ref} {value_ref}"
+        for name_ref, value_ref in zip(expression_names, [f":v{i}" for i in range(len(increments))])
+    ]
+
+    return update_item(
+        pk=pk,
+        sk=sk,
+        update_expression=(
+            "SET entityType = :entity, eventId = :eventId "
+            f"ADD {', '.join(add_parts)}"
+        ),
+        expression_values=expression_values,
+        expression_names=expression_names,
+    )
+
+
 # ============================================================================
 # Convenience Lookups
 # ============================================================================
@@ -169,8 +279,47 @@ def get_event(event_id: str) -> Optional[dict[str, Any]]:
 
 
 def get_event_stats(event_id: str) -> Optional[dict[str, Any]]:
-    """Retrieve queue statistics for an event."""
-    return get_item(f"{EVENT_PREFIX}{event_id}", STATS_SK)
+    """Retrieve aggregate queue statistics for an event.
+
+    The root ``STATS`` item stores low-frequency metadata such as
+    ``currentlyServingPosition``. High-frequency counters are summed from
+    sharded stats items.
+    """
+    from boto3.dynamodb.conditions import Key
+
+    pk = f"{EVENT_PREFIX}{event_id}"
+    base = get_item(pk, STATS_SK)
+    if not base:
+        return None
+
+    items = query_items(
+        key_condition=Key("PK").eq(pk) & Key("SK").begins_with(STATS_SHARD_PREFIX),
+    )
+
+    stats = dict(base)
+    for attr in (
+        "waitingUsers",
+        "admittedUsers",
+        "expiredUsers",
+        "cancelledUsers",
+        "completedUsers",
+        "totalUsers",
+        "avgWaitTime",
+    ):
+        stats[attr] = int(base.get(attr, 0))
+
+    for item in items:
+        for attr in (
+            "waitingUsers",
+            "admittedUsers",
+            "expiredUsers",
+            "cancelledUsers",
+            "completedUsers",
+            "totalUsers",
+        ):
+            stats[attr] += int(item.get(attr, 0))
+
+    return stats
 
 
 def get_token(token_id: str) -> Optional[dict[str, Any]]:
@@ -211,4 +360,23 @@ def query_waiting_users(
         limit=limit,
         scan_index_forward=True,
         filter_expression=Attr("status").eq("WAITING"),
+    )
+
+
+def query_queue_entries(
+    event_id: str,
+    status: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Return queue entries for admin views using GSI3."""
+    from boto3.dynamodb.conditions import Key
+
+    prefix = f"STATUS#{status}#" if status else "STATUS#"
+    return query_items(
+        key_condition=(
+            Key("GSI3PK").eq(f"{EVENT_PREFIX}{event_id}")
+            & Key("GSI3SK").begins_with(prefix)
+        ),
+        index_name=GSI3_NAME,
+        limit=limit,
     )

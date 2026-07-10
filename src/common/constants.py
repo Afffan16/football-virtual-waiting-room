@@ -11,7 +11,7 @@ import os
 # ---------------------------------------------------------------------------
 # DynamoDB Configuration
 # ---------------------------------------------------------------------------
-TABLE_NAME: str = os.environ.get("TABLE_NAME", "FootballWaitingRoom")
+TABLE_NAME: str = os.environ.get("TABLE_NAME", "football-waiting-room-test-FootballWaitingRoomTable-KZTI1AHBZ92I")
 
 # ---------------------------------------------------------------------------
 # Key Prefixes — Single Table Design
@@ -21,6 +21,8 @@ USER_PREFIX: str = "USER#"
 QUEUE_PREFIX: str = "QUEUE#"
 TOKEN_PREFIX: str = "TOKEN#"
 SESSION_PREFIX: str = "SESSION#"
+QUEUE_REGISTRATION_PREFIX: str = "QUEUE#EVENT#"
+STATS_SHARD_PREFIX: str = "STATS#SHARD#"
 
 # Sort Key Constants
 METADATA_SK: str = "METADATA"
@@ -52,6 +54,7 @@ ENTITY_QUEUE: str = "QUEUE"
 ENTITY_TOKEN: str = "TOKEN"
 ENTITY_SESSION: str = "SESSION"
 ENTITY_STATS: str = "STATS"
+ENTITY_QUEUE_REGISTRATION: str = "QUEUE_REGISTRATION"
 
 # ---------------------------------------------------------------------------
 # Queue Status Values
@@ -95,6 +98,7 @@ SESSION_TTL_MINUTES: int = int(os.environ.get("SESSION_TTL_MINUTES", "30"))
 # Admission Defaults
 # ---------------------------------------------------------------------------
 DEFAULT_BATCH_SIZE: int = int(os.environ.get("DEFAULT_BATCH_SIZE", "50"))
+MAX_BATCH_SIZE: int = int(os.environ.get("MAX_BATCH_SIZE", "500"))
 
 # ---------------------------------------------------------------------------
 # Stretch Goal — Active Purchaser Cap
@@ -103,6 +107,13 @@ DEFAULT_BATCH_SIZE: int = int(os.environ.get("DEFAULT_BATCH_SIZE", "50"))
 # When admitted users complete or expire, the admit endpoint auto-refills
 # up to this limit. Set via SAM parameter PurchasingCapacity.
 PURCHASING_CAPACITY: int = int(os.environ.get("PURCHASING_CAPACITY", "1000"))
+STATS_SHARD_COUNT: int = int(os.environ.get("STATS_SHARD_COUNT", "16"))
+
+# ---------------------------------------------------------------------------
+# Demo Admin Login
+# ---------------------------------------------------------------------------
+ADMIN_EMAIL: str = os.environ.get("ADMIN_EMAIL", "admin123@gmail.com")
+ADMIN_PASSWORD: str = os.environ.get("ADMIN_PASSWORD", "admin123")
 
 # ---------------------------------------------------------------------------
 # Queue Position Formatting

@@ -17,6 +17,8 @@ Globals:
         LOG_LEVEL: INFO
         # Security — injected at deploy time; never hardcoded here
         ADMIN_API_KEY: !Ref AdminApiKey
+        ADMIN_EMAIL: !Ref AdminEmail
+        ADMIN_PASSWORD: !Ref AdminPassword
     LoggingConfig:
       LogFormat: JSON
 
@@ -52,6 +54,15 @@ Parameters:
       API key value for the admin (x-admin-api-key header). Leave blank to
       auto-generate a placeholder. Set via --parameter-overrides at deploy time.
       Store the real value in AWS Secrets Manager in production.
+  AdminEmail:
+    Type: String
+    Default: admin123@gmail.com
+    Description: Demo admin login email.
+  AdminPassword:
+    Type: String
+    NoEcho: true
+    Default: admin123
+    Description: Demo admin login password. Use Secrets Manager in production.
 
 Resources:
   # ==========================================================================
@@ -158,14 +169,14 @@ Resources:
       Description: Football Virtual Waiting Room REST API
       Cors:
         AllowMethods: "'GET,POST,OPTIONS'"
-        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Idempotency-Key'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Idempotency-Key,x-admin-api-key,x-admin-email,x-admin-password'"
         AllowOrigin: "'*'"
       # Throttle per-stage to protect against abuse
       MethodSettings:
         - ResourcePath: "/*"
           HttpMethod: "*"
-          ThrottlingBurstLimit: 500
-          ThrottlingRateLimit: 200
+          ThrottlingBurstLimit: 5000
+          ThrottlingRateLimit: 2000
 
   # --------------------------------------------------------------------------
   # API Key + Usage Plan — controls who can call POST /queue/admit (admin ops)
@@ -187,8 +198,8 @@ Resources:
         - ApiId: !Ref WaitingRoomApi
           Stage: !Ref StageName
       Throttle:
-        BurstLimit: 500
-        RateLimit: 200
+        BurstLimit: 5000
+        RateLimit: 2000
       Quota:
         Limit: 1000000
         Period: DAY
@@ -287,6 +298,24 @@ Resources:
             Path: /queue/admit
             Method: POST
 
+  # --- Admin Queue List ---
+  AdminQueueListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Lists real queue entries for admin dashboard views
+      CodeUri: src/
+      Handler: admin_queue_list.app.lambda_handler
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref FootballWaitingRoomTable
+      Events:
+        AdminQueueList:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitingRoomApi
+            Path: /queue/admin/list
+            Method: GET
+
   # --- Validate Token ---
   ValidateTokenFunction:
     Type: AWS::Serverless::Function
@@ -380,6 +409,10 @@ Outputs:
   AdmitUsersFunctionArn:
     Description: Admit Users Lambda ARN
     Value: !GetAtt AdmitUsersFunction.Arn
+
+  AdminQueueListFunctionArn:
+    Description: Admin Queue List Lambda ARN
+    Value: !GetAtt AdminQueueListFunction.Arn
 
   ValidateTokenFunctionArn:
     Description: Validate Token Lambda ARN

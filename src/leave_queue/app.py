@@ -19,12 +19,13 @@ from typing import Any
 from common.constants import (
     EVENT_PREFIX,
     QUEUE_PREFIX,
-    QUEUE_POSITION_PAD_LENGTH,
+    QUEUE_REGISTRATION_PREFIX,
     STATS_SK,
     STATUS_CANCELLED,
     STATUS_WAITING,
+    USER_PREFIX,
 )
-from common.dynamodb import atomic_increment, query_user_queue, update_item
+from common.dynamodb import increment_stats, query_user_queue, update_item
 from common.logger import logger
 from common.responses import bad_request, conflict, internal_error, not_found, success
 from common.utils import parse_body, utc_now_iso, validate_required_fields
@@ -86,9 +87,18 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
             return conflict("Queue entry status has already changed.")
 
         # ----- Update statistics -----
-        stats_pk = f"{EVENT_PREFIX}{event_id}"
-        # Only increment cancelledUsers. We disabled waitingUsers increments in join_queue to avoid hot partitions.
-        atomic_increment(stats_pk, STATS_SK, "cancelledUsers", increment=1)
+        increment_stats(
+            event_id,
+            {"waitingUsers": -1, "cancelledUsers": 1},
+            shard_seed=user_id,
+        )
+        update_item(
+            pk=f"{USER_PREFIX}{user_id}",
+            sk=f"{QUEUE_REGISTRATION_PREFIX}{event_id}",
+            update_expression="SET #status = :new_status, updatedAt = :now",
+            expression_values={":new_status": STATUS_CANCELLED, ":now": now},
+            expression_names={"#status": "status"},
+        )
 
         logger.info("User successfully left queue", extra={"queuePosition": queue_position})
 

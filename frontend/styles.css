@@ -398,6 +398,8 @@ body {
 .header-actions {
     display: flex;
     gap: 0.75rem;
+    align-items: center;
+    flex-wrap: wrap;
 }
 
 /* ---- Glass Cards ---- */
@@ -543,6 +545,42 @@ body {
 .input-select option {
     background: var(--bg-elevated);
     color: var(--text-primary);
+}
+
+.auth-container {
+    min-height: calc(100vh - 80px);
+    display: grid;
+    place-items: center;
+}
+
+.auth-card {
+    width: min(100%, 420px);
+}
+
+.auth-card .input-field {
+    margin-bottom: 1rem;
+}
+
+.session-pill {
+    padding: 0.45rem 0.75rem;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: rgba(255,255,255,0.05);
+    font-size: 0.82rem;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.readonly-identity {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* ================================================================

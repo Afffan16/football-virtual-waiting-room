@@ -8,11 +8,9 @@
 // For local development with SAM Local: http://127.0.0.1:3000
 const API_BASE = "https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod";
 
-// Admin API key — set this to your x-admin-api-key value.
-// In a production web app this should be read from a server-side
-// session or injected at build time, never committed to source control.
-// For this demo it is left configurable here.
-const ADMIN_API_KEY = "53d1a2703d76b17c5fd1c9ddeb884572bb1de30956bdc2f1d27df074bf0503e5";
+// Demo admin login. Production should replace this with server-side auth.
+const ADMIN_LOGIN_EMAIL = "admin123@gmail.com";
+const ADMIN_LOGIN_PASSWORD = "admin123";
 
 // ---- Football events catalog (hardcoded for demo, matches seed_data.py) ----
 const EVENTS_CATALOG = [
@@ -29,12 +27,22 @@ let currentPage = "home";
 let selectedEventId = null;
 let adminQueueData = [];
 let adminCurrentFilter = "ALL";
+let currentUser = JSON.parse(sessionStorage.getItem("waitingRoomUser") || "null");
+let currentAdmin = JSON.parse(sessionStorage.getItem("waitingRoomAdmin") || "null");
 
 // ================================================================
 // NAVIGATION (SPA Router)
 // ================================================================
 
 function navigate(page, eventId = null) {
+    if ((page === "events" || page === "event-detail") && !currentUser) {
+        page = "user-login";
+        eventId = null;
+    }
+    if (page === "admin" && !currentAdmin) {
+        page = "admin-login";
+    }
+
     // Hide all pages
     document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
 
@@ -57,6 +65,12 @@ function navigate(page, eventId = null) {
             break;
         case "admin":
             initAdminPage();
+            break;
+        case "admin-login":
+            initAdminLogin();
+            break;
+        case "user-login":
+            initUserLogin();
             break;
         case "events":
             renderEventsGrid();
@@ -85,6 +99,22 @@ function updateNavLinks() {
     ).join("");
 }
 
+function updateSessionPanels() {
+    const fanId = document.getElementById("global-user-id");
+    if (fanId) {
+        fanId.textContent = currentUser
+            ? `${currentUser.userId} - ${currentUser.email}`
+            : "Assigned after login";
+    }
+
+    const adminLabel = document.getElementById("admin-session-label");
+    if (adminLabel) {
+        adminLabel.textContent = currentAdmin
+            ? `Signed in: ${currentAdmin.email}`
+            : "Not signed in";
+    }
+}
+
 // ================================================================
 // API HELPER
 // ================================================================
@@ -93,9 +123,10 @@ async function api(method, endpoint, body = null) {
     const url = `${API_BASE}${endpoint}`;
     const headers = { "Content-Type": "application/json" };
 
-    // Attach admin key for protected admin endpoints
-    if (endpoint === "/queue/admit" && ADMIN_API_KEY) {
-        headers["x-admin-api-key"] = ADMIN_API_KEY;
+    // Attach admin credentials for protected admin endpoints.
+    if ((endpoint.startsWith("/queue/admit") || endpoint.startsWith("/queue/admin")) && currentAdmin) {
+        headers["x-admin-email"] = currentAdmin.email;
+        headers["x-admin-password"] = currentAdmin.password;
     }
 
     const opts = { method, headers };
@@ -131,6 +162,85 @@ function showToast(message, type = "info") {
 }
 
 // ================================================================
+// AUTH
+// ================================================================
+
+function deriveUserId(email) {
+    let hash = 0;
+    const normalized = email.trim().toLowerCase();
+    for (let i = 0; i < normalized.length; i++) {
+        hash = ((hash << 5) - hash) + normalized.charCodeAt(i);
+        hash |= 0;
+    }
+    return `FAN-${Math.abs(hash).toString(36).toUpperCase().padStart(8, "0")}`;
+}
+
+function getCurrentUserId() {
+    return currentUser?.userId || "";
+}
+
+function initUserLogin() {
+    const email = document.getElementById("user-login-email");
+    if (email && currentUser) email.value = currentUser.email;
+    const password = document.getElementById("user-login-password");
+    if (password) password.value = "";
+}
+
+function initAdminLogin() {
+    const email = document.getElementById("admin-login-email");
+    if (email) email.value = ADMIN_LOGIN_EMAIL;
+    const password = document.getElementById("admin-login-password");
+    if (password) password.value = "";
+}
+
+function userLogin() {
+    const email = document.getElementById("user-login-email").value.trim().toLowerCase();
+    const password = document.getElementById("user-login-password").value;
+    if (!email || !password) {
+        showToast("Email and password are required", "error");
+        return;
+    }
+
+    currentUser = {
+        email,
+        userId: deriveUserId(email),
+    };
+    sessionStorage.setItem("waitingRoomUser", JSON.stringify(currentUser));
+    updateSessionPanels();
+    showToast(`Logged in as ${currentUser.userId}`, "success");
+    navigate("events");
+}
+
+function adminLogin() {
+    const email = document.getElementById("admin-login-email").value.trim().toLowerCase();
+    const password = document.getElementById("admin-login-password").value;
+    if (email !== ADMIN_LOGIN_EMAIL || password !== ADMIN_LOGIN_PASSWORD) {
+        showToast("Invalid admin credentials", "error");
+        return;
+    }
+
+    currentAdmin = { email, password };
+    sessionStorage.setItem("waitingRoomAdmin", JSON.stringify(currentAdmin));
+    updateSessionPanels();
+    showToast("Admin logged in", "success");
+    navigate("admin");
+}
+
+function logoutUser() {
+    currentUser = null;
+    sessionStorage.removeItem("waitingRoomUser");
+    updateSessionPanels();
+    navigate("home");
+}
+
+function logoutAdmin() {
+    currentAdmin = null;
+    sessionStorage.removeItem("waitingRoomAdmin");
+    updateSessionPanels();
+    navigate("home");
+}
+
+// ================================================================
 // HOME PAGE
 // ================================================================
 
@@ -154,6 +264,7 @@ async function loadHomeStats() {
 // ================================================================
 
 function initAdminPage() {
+    updateSessionPanels();
     // Populate event selector
     const select = document.getElementById("admin-event-select");
     select.innerHTML = `<option value="">— Choose an event —</option>` +
@@ -409,6 +520,7 @@ function clearAdminLog() {
 // ================================================================
 
 function renderEventsGrid() {
+    updateSessionPanels();
     const grid = document.getElementById("events-grid");
 
     grid.innerHTML = EVENTS_CATALOG.map(evt => {
@@ -476,7 +588,11 @@ function initEventDetail(eventId) {
 }
 
 async function userJoinQueue() {
-    const userId = document.getElementById("global-user-id").value || "FAN-001";
+    const userId = getCurrentUserId();
+    if (!userId) {
+        navigate("user-login");
+        return;
+    }
     if (!selectedEventId) return;
 
     detailLog(`Joining queue for event ${selectedEventId} as ${userId}...`);
@@ -508,7 +624,11 @@ async function userJoinQueue() {
 }
 
 async function userCheckStatus() {
-    const userId = document.getElementById("global-user-id").value || "FAN-001";
+    const userId = getCurrentUserId();
+    if (!userId) {
+        navigate("user-login");
+        return;
+    }
     if (!selectedEventId) return;
 
     detailLog(`Checking status for ${userId} in event ${selectedEventId}...`);
@@ -550,7 +670,11 @@ async function userCheckStatus() {
 }
 
 async function userLeaveQueue() {
-    const userId = document.getElementById("global-user-id").value || "FAN-001";
+    const userId = getCurrentUserId();
+    if (!userId) {
+        navigate("user-login");
+        return;
+    }
     if (!selectedEventId) return;
 
     if (!confirm("Are you sure you want to leave the queue? This cannot be undone.")) return;
@@ -702,11 +826,60 @@ function initParticles() {
 }
 
 // ================================================================
+// ADMIN REAL-DATA OVERRIDES
+// ================================================================
+
+async function loadAdminQueueEntries(eventId) {
+    const status = adminCurrentFilter === "ALL" ? "ALL" : adminCurrentFilter;
+    const response = await api("GET", `/queue/admin/list?eventId=${eventId}&status=${status}&limit=500`);
+    if (response && !response.error) {
+        const body = response.body ? JSON.parse(response.body) : response;
+        adminQueueData = (body.entries || []).map(entry => ({
+            queuePosition: entry.queuePosition,
+            userId: entry.userId,
+            status: entry.status,
+            joinTime: entry.joinTime,
+            estimatedWait: entry.estimatedWaitMinutes || 0,
+        }));
+        adminLog(`Loaded ${adminQueueData.length} real queue entries from DynamoDB.`);
+    } else {
+        const errBody = response?.body ? JSON.parse(response.body) : response;
+        adminQueueData = [];
+        adminLog(`Failed to load queue entries: ${errBody?.error?.message || errBody?.message || "Unknown error"}`);
+    }
+    renderAdminTable();
+}
+
+function filterAdminTable(status, btn) {
+    adminCurrentFilter = status;
+    document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
+    btn.classList.add("active");
+    const eventId = document.getElementById("admin-event-select").value;
+    if (eventId) {
+        loadAdminQueueEntries(eventId);
+    } else {
+        renderAdminTable();
+    }
+}
+
+// ================================================================
 // INITIALIZATION
 // ================================================================
 
 document.addEventListener("DOMContentLoaded", () => {
     initParticles();
     updateNavLinks();
+    updateSessionPanels();
     loadHomeStats();
+
+    ["user-login-password", "admin-login-password"].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            input.addEventListener("keydown", event => {
+                if (event.key === "Enter") {
+                    id.startsWith("user") ? userLogin() : adminLogin();
+                }
+            });
+        }
+    });
 });

@@ -17,7 +17,8 @@ _CORS_HEADERS: dict[str, str] = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": (
         "Content-Type,X-Amz-Date,Authorization,"
-        "X-Api-Key,X-Amz-Security-Token,Idempotency-Key"
+        "X-Api-Key,X-Amz-Security-Token,Idempotency-Key,"
+        "x-admin-api-key,x-admin-email,x-admin-password"
     ),
     "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
 }

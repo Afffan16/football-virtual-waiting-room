@@ -30,6 +30,7 @@ from common.constants import (
     TOKEN_PREFIX,
     USER_PREFIX,
 )
+from common.utils import format_queue_position
 
 
 # ============================================================================
@@ -103,7 +104,7 @@ class QueueEntry:
 
     event_id: str
     user_id: str
-    queue_position: str
+    queue_position: str | int
     status: str
     join_time: str
     estimated_wait: int = 0
@@ -113,7 +114,11 @@ class QueueEntry:
 
     def to_item(self) -> dict[str, Any]:
         """Serialize to a DynamoDB item dictionary."""
-        padded_position = self.queue_position
+        padded_position = (
+            format_queue_position(self.queue_position)
+            if isinstance(self.queue_position, int)
+            else str(self.queue_position)
+        )
         return {
             "PK": f"{EVENT_PREFIX}{self.event_id}",
             "SK": f"{QUEUE_PREFIX}{padded_position}",
