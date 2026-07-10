@@ -27,6 +27,8 @@
 [![Live Demo](https://img.shields.io/badge/🌐_Live_Demo-CloudFront-0089D6?style=for-the-badge)](https://ddwi3zvh6b39d.cloudfront.net/)
 [![S3 Origin](https://img.shields.io/badge/S3_Static_Site-Origin-FF9900?style=for-the-badge&logo=amazons3&logoColor=white)](http://football-waiting-room-affan.s3-website-us-east-1.amazonaws.com/)
 
+*Admin portal login → `admin123@gmail.com` / `admin123`*
+
 </div>
 
 ---
@@ -85,6 +87,7 @@ A glassmorphism dark-themed **Single Page Application** with four views:
 Files: `frontend/index.html`, `frontend/styles.css`, `frontend/app.js`
 
 > **▶ Try it live:** **[ddwi3zvh6b39d.cloudfront.net](https://ddwi3zvh6b39d.cloudfront.net/)**
+> **🔑 Admin login:** `admin123@gmail.com` / `admin123`
 
 To run locally: open `frontend/index.html` in a browser, or serve with `python -m http.server 8080 --directory frontend`.
 
