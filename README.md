@@ -22,6 +22,11 @@
 [Testing](#-testing) •
 [Docs](#-full-documentation)
 
+### 🔗 Live Demo
+
+**S3 Website:** http://football-waiting-room-affan.s3-website-us-east-1.amazonaws.com/
+**CloudFront (recommended):** https://ddwi3zvh6b39d.cloudfront.net/
+
 </div>
 
 ---
@@ -78,6 +83,10 @@ A glassmorphism dark-themed **Single Page Application** with four views:
 | **Event Detail** | Join queue, check status, leave queue — full user workflow |
 
 Files: `frontend/index.html`, `frontend/styles.css`, `frontend/app.js`
+
+**Live:**
+- CloudFront (HTTPS, cached): https://ddwi3zvh6b39d.cloudfront.net/
+- S3 static website hosting (origin): http://football-waiting-room-affan.s3-website-us-east-1.amazonaws.com/
 
 To run locally: open `frontend/index.html` in a browser, or serve with `python -m http.server 8080 --directory frontend`.
 
@@ -260,7 +269,7 @@ Full endpoint contracts, validation rules, and error schemas: [`docs/08-api-desi
 | **Compute** | AWS Lambda (Python 3.14) |
 | **Data** | Amazon DynamoDB (Single Table, On-Demand, Streams, TTL, PITR, SSE) |
 | **API** | Amazon API Gateway (REST, throttling, usage plans) |
-| **Frontend** | Static HTML/CSS/JS SPA — glassmorphism dark theme |
+| **Frontend** | Static HTML/CSS/JS SPA — glassmorphism dark theme, hosted on S3 + CloudFront |
 | **Observability** | Amazon CloudWatch, structured JSON logging (AWS Lambda Powertools) |
 | **Security** | AWS IAM (least privilege), API key auth, input validation |
 | **Infrastructure as Code** | AWS SAM / CloudFormation |
@@ -350,6 +359,8 @@ python scripts/seed_data.py
 
 Edit `frontend/app.js` — set `API_BASE` to your deployed API URL. Then open `frontend/index.html` in a browser. The demo admin login is `admin123@gmail.com` / `admin123`.
 
+Or just visit the live deployment: https://ddwi3zvh6b39d.cloudfront.net/
+
 ---
 
 ## 🚢 Deployment
@@ -361,6 +372,23 @@ Quick reference:
 ```bash
 sam build
 sam deploy --parameter-overrides AdminApiKey="$(openssl rand -hex 32)"
+```
+
+### 🌐 Live Environment
+
+| Resource | URL |
+|---|---|
+| **CloudFront (frontend, HTTPS)** | https://ddwi3zvh6b39d.cloudfront.net/ |
+| **S3 static website (frontend origin)** | http://football-waiting-room-affan.s3-website-us-east-1.amazonaws.com/ |
+| **API Gateway (backend)** | https://n20mxucrj4.execute-api.us-east-1.amazonaws.com/Prod |
+
+### Redeploying frontend changes
+
+After editing files in `frontend/`, sync to S3 and invalidate the CloudFront cache so visitors see the update immediately:
+
+```bash
+aws s3 sync ./frontend s3://football-waiting-room-affan --delete
+aws cloudfront create-invalidation --distribution-id <YOUR_DISTRIBUTION_ID> --paths "/*"
 ```
 
 ---
