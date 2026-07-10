@@ -287,6 +287,7 @@ football-virtual-waiting-room/
 ├── docs/                   # 13-part design & engineering log
 ├── diagrams/               # Architecture diagrams
 ├── frontend/               # Static SPA (index.html, styles.css, app.js)
+├── nosql-workbench/        # NoSQL Workbench data model JSON export
 ├── src/
 │   ├── common/             # Shared: dynamodb, models, responses, logger, utils, constants
 │   ├── join_queue/
@@ -466,6 +467,8 @@ Fork, branch, write tests, and open a PR. See [`CONTRIBUTING.MD`](CONTRIBUTING.M
 ## 📋 Challenge Deliverables
 
 Full breakdown of every challenge requirement and how it was met: **[`DELIVERABLES.md`](DELIVERABLES.md)**
+
+NoSQL Workbench export: **[`nosql-workbench/football-waiting-room-data-model.json`](nosql-workbench/football-waiting-room-data-model.json)**
 
 ## 📄 License
 

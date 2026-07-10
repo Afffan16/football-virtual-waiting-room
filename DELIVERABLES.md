@@ -39,7 +39,7 @@ A **Single Table Design** (`FootballWaitingRoom`) storing six entity types in on
 
 | Attribute | Value | Purpose |
 |---|---|---|
-| `PK` | `EVENT#<eventId>` | Groups all queue entries for one event in a single item collection |
+| `PK` | `EVENT#<eventId>#SHARD#<nn>` | Distributes queue entries across deterministic event shards to avoid a hot partition |
 | `SK` | `QUEUE#<timestamp_ms>-<uuid8>` | Lexicographically sortable; timestamp ensures order, UUID ensures uniqueness |
 | `userId` | Fan identifier | Who joined |
 | `status` | `WAITING` / `ADMITTED` / `COMPLETED` / `EXPIRED` / `CANCELLED` / `REGISTRATION_CLOSED` | Eligibility state |
@@ -52,7 +52,7 @@ A **Single Table Design** (`FootballWaitingRoom`) storing six entity types in on
 | Entity | PK | SK | Purpose |
 |---|---|---|---|
 | Event | `EVENT#<id>` | `METADATA` | Match metadata (stadium, capacity, status) |
-| **Queue Entry** | `EVENT#<id>` | `QUEUE#<ts-uuid>` | Fan's place in the queue |
+| **Queue Entry** | `EVENT#<id>#SHARD#<nn>` | `QUEUE#<ts-uuid>` | Fan's place in the queue |
 | Queue Registration Guard | `USER#<id>` | `QUEUE#EVENT#<eventId>` | Prevents duplicate active registration and points to the queue row |
 | Admission Token | `TOKEN#<id>` | `METADATA` | Short-lived checkout credential (TTL) |
 | Statistics | `EVENT#<id>` | `STATS` and `STATS#SHARD#nn` | Base stats metadata plus sharded hot counters |
@@ -66,6 +66,23 @@ A **Single Table Design** (`FootballWaitingRoom`) storing six entity types in on
 - Data model reasoning: [`docs/04-data-model.md`](docs/04-data-model.md)
 - Infrastructure as Code: [`template.yaml`](template.yaml)
 - DynamoDB models: [`src/common/models.py`](src/common/models.py)
+- NoSQL Workbench export: [`nosql-workbench/football-waiting-room-data-model.json`](nosql-workbench/football-waiting-room-data-model.json)
+
+### NoSQL Workbench Export
+
+The required NoSQL Workbench JSON export is included at:
+
+```text
+nosql-workbench/football-waiting-room-data-model.json
+```
+
+It includes:
+
+- Table: `FootballWaitingRoom`
+- Primary key: `PK` + `SK`
+- GSIs: `GSI1`, `GSI2`, `GSI3`
+- LSIs: none, explicitly declared as `LocalSecondaryIndexes: []`
+- Sample data: at least five sample items for the table and for each GSI
 
 ---
 
@@ -259,6 +276,7 @@ The challenge asked for a data model. This submission delivers a **fully deploye
 | File / Folder | What it is |
 |---|---|
 | [`template.yaml`](template.yaml) | SAM infrastructure — DynamoDB, Lambda, API Gateway |
+| [`nosql-workbench/`](nosql-workbench/) | NoSQL Workbench DynamoDB data model JSON export |
 | [`src/`](src/) | All Lambda handlers + shared common library |
 | [`docs/`](docs/) | 13-document engineering log |
 | [`frontend/`](frontend/) | Live SPA connected to the deployed API |

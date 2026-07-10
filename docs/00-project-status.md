@@ -66,6 +66,7 @@ football-virtual-waiting-room/
 ├── docs/                  # 16-part design & engineering log
 ├── diagrams/              # Architecture diagrams
 ├── events/                # Sample Lambda test events (SAM local)
+├── nosql-workbench/       # NoSQL Workbench DynamoDB data model export
 ├── postman/               # API collection + environment
 ├── scripts/               # seed, cleanup, test-data, and load-test scripts
 ├── src/                   # Lambda source + shared common library
@@ -104,7 +105,7 @@ All 13 design documents are complete, forming a full engineering log from proble
 | 12 | [Testing Guide](12-testing-guide.md) | ✅ |
 | 13 | [Deployment Guide](13-deployment-guide.md) | ✅ |
 
-Repository-level documentation is also complete: `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, and local development setup instructions.
+Repository-level documentation is also complete: `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, the NoSQL Workbench export in `nosql-workbench/`, and local development setup instructions.
 
 ---
 

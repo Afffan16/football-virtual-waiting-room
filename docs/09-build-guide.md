@@ -144,7 +144,7 @@ sam init   # Python 3.14, Zip, Hello World starter — replaced in later steps
 
 ```
 docs/       frontend/   scripts/    src/
-diagrams/   events/     tests/
+diagrams/   events/     nosql-workbench/   tests/
 ```
 
 ---

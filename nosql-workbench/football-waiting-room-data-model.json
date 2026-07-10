@@ -1,0 +1,369 @@
+{
+  "ModelName": "Football Virtual Waiting Room",
+  "ModelVersion": "1.0",
+  "ExportType": "NoSQL Workbench Data Model",
+  "Service": "Amazon DynamoDB",
+  "Description": "Single-table DynamoDB model for the Football Virtual Waiting Room challenge. Includes all table keys, GSIs, LSI declaration, and sample items for table/index review.",
+  "DataModel": [
+    {
+      "TableName": "FootballWaitingRoom",
+      "BillingMode": "PAY_PER_REQUEST",
+      "KeyAttributes": {
+        "PartitionKey": {
+          "AttributeName": "PK",
+          "AttributeType": "S"
+        },
+        "SortKey": {
+          "AttributeName": "SK",
+          "AttributeType": "S"
+        }
+      },
+      "AttributeDefinitions": [
+        { "AttributeName": "PK", "AttributeType": "S" },
+        { "AttributeName": "SK", "AttributeType": "S" },
+        { "AttributeName": "GSI1PK", "AttributeType": "S" },
+        { "AttributeName": "GSI1SK", "AttributeType": "S" },
+        { "AttributeName": "GSI2PK", "AttributeType": "S" },
+        { "AttributeName": "GSI2SK", "AttributeType": "S" },
+        { "AttributeName": "GSI3PK", "AttributeType": "S" },
+        { "AttributeName": "GSI3SK", "AttributeType": "S" }
+      ],
+      "GlobalSecondaryIndexes": [
+        {
+          "IndexName": "GSI1",
+          "Description": "User queue lookup / resume-session projection.",
+          "KeyAttributes": {
+            "PartitionKey": {
+              "AttributeName": "GSI1PK",
+              "AttributeType": "S"
+            },
+            "SortKey": {
+              "AttributeName": "GSI1SK",
+              "AttributeType": "S"
+            }
+          },
+          "Projection": {
+            "ProjectionType": "INCLUDE",
+            "NonKeyAttributes": [
+              "queuePosition",
+              "status",
+              "joinTime",
+              "estimatedWait",
+              "eventId",
+              "userId",
+              "entityType"
+            ]
+          },
+          "SampleItems": [
+            {
+              "GSI1PK": "USER#FAN-0001",
+              "GSI1SK": "EVENT#1001",
+              "queuePosition": "2026-07-10T18:01:22.123456Z#8f4a",
+              "status": "WAITING",
+              "joinTime": "2026-07-10T18:01:22.123456Z",
+              "estimatedWait": 1,
+              "eventId": "1001",
+              "userId": "FAN-0001",
+              "entityType": "QUEUE"
+            },
+            {
+              "GSI1PK": "USER#FAN-0002",
+              "GSI1SK": "EVENT#1001",
+              "queuePosition": "2026-07-10T18:01:23.000001Z#40bd",
+              "status": "WAITING",
+              "joinTime": "2026-07-10T18:01:23.000001Z",
+              "estimatedWait": 2,
+              "eventId": "1001",
+              "userId": "FAN-0002",
+              "entityType": "QUEUE"
+            },
+            {
+              "GSI1PK": "USER#FAN-0003",
+              "GSI1SK": "EVENT#1001",
+              "queuePosition": "2026-07-10T18:01:24.100000Z#a901",
+              "status": "ADMITTED",
+              "joinTime": "2026-07-10T18:01:24.100000Z",
+              "estimatedWait": 3,
+              "eventId": "1001",
+              "userId": "FAN-0003",
+              "entityType": "QUEUE"
+            },
+            {
+              "GSI1PK": "USER#FAN-0004",
+              "GSI1SK": "EVENT#1002",
+              "queuePosition": "2026-07-10T18:02:10.500000Z#b337",
+              "status": "WAITING",
+              "joinTime": "2026-07-10T18:02:10.500000Z",
+              "estimatedWait": 1,
+              "eventId": "1002",
+              "userId": "FAN-0004",
+              "entityType": "QUEUE"
+            },
+            {
+              "GSI1PK": "USER#FAN-0005",
+              "GSI1SK": "EVENT#1002",
+              "queuePosition": "2026-07-10T18:02:11.500000Z#cc21",
+              "status": "CANCELLED",
+              "joinTime": "2026-07-10T18:02:11.500000Z",
+              "estimatedWait": 2,
+              "eventId": "1002",
+              "userId": "FAN-0005",
+              "entityType": "QUEUE"
+            }
+          ]
+        },
+        {
+          "IndexName": "GSI2",
+          "Description": "Admission token lookup.",
+          "KeyAttributes": {
+            "PartitionKey": {
+              "AttributeName": "GSI2PK",
+              "AttributeType": "S"
+            },
+            "SortKey": {
+              "AttributeName": "GSI2SK",
+              "AttributeType": "S"
+            }
+          },
+          "Projection": {
+            "ProjectionType": "INCLUDE",
+            "NonKeyAttributes": [
+              "tokenId",
+              "userId",
+              "eventId",
+              "status",
+              "expiresAt",
+              "entityType"
+            ]
+          },
+          "SampleItems": [
+            {
+              "GSI2PK": "TOKEN#TOK-1001-0001",
+              "GSI2SK": "STATUS#ACTIVE",
+              "tokenId": "TOK-1001-0001",
+              "userId": "FAN-0003",
+              "eventId": "1001",
+              "status": "ACTIVE",
+              "expiresAt": 1783710982,
+              "entityType": "TOKEN"
+            },
+            {
+              "GSI2PK": "TOKEN#TOK-1001-0002",
+              "GSI2SK": "STATUS#USED",
+              "tokenId": "TOK-1001-0002",
+              "userId": "FAN-0006",
+              "eventId": "1001",
+              "status": "USED",
+              "expiresAt": 1783711020,
+              "entityType": "TOKEN"
+            },
+            {
+              "GSI2PK": "TOKEN#TOK-1001-0003",
+              "GSI2SK": "STATUS#EXPIRED",
+              "tokenId": "TOK-1001-0003",
+              "userId": "FAN-0007",
+              "eventId": "1001",
+              "status": "EXPIRED",
+              "expiresAt": 1783710000,
+              "entityType": "TOKEN"
+            },
+            {
+              "GSI2PK": "TOKEN#TOK-1002-0001",
+              "GSI2SK": "STATUS#ACTIVE",
+              "tokenId": "TOK-1002-0001",
+              "userId": "FAN-0008",
+              "eventId": "1002",
+              "status": "ACTIVE",
+              "expiresAt": 1783711882,
+              "entityType": "TOKEN"
+            },
+            {
+              "GSI2PK": "TOKEN#TOK-1002-0002",
+              "GSI2SK": "STATUS#ACTIVE",
+              "tokenId": "TOK-1002-0002",
+              "userId": "FAN-0009",
+              "eventId": "1002",
+              "status": "ACTIVE",
+              "expiresAt": 1783711982,
+              "entityType": "TOKEN"
+            }
+          ]
+        },
+        {
+          "IndexName": "GSI3",
+          "Description": "Sharded admin/admission queue view, sorted by status and queue position.",
+          "KeyAttributes": {
+            "PartitionKey": {
+              "AttributeName": "GSI3PK",
+              "AttributeType": "S"
+            },
+            "SortKey": {
+              "AttributeName": "GSI3SK",
+              "AttributeType": "S"
+            }
+          },
+          "Projection": {
+            "ProjectionType": "INCLUDE",
+            "NonKeyAttributes": [
+              "queuePosition",
+              "status",
+              "userId",
+              "entityType"
+            ]
+          },
+          "SampleItems": [
+            {
+              "GSI3PK": "EVENT#1001#SHARD#00",
+              "GSI3SK": "STATUS#WAITING#2026-07-10T18:01:22.123456Z#8f4a",
+              "queuePosition": "2026-07-10T18:01:22.123456Z#8f4a",
+              "status": "WAITING",
+              "userId": "FAN-0001",
+              "entityType": "QUEUE"
+            },
+            {
+              "GSI3PK": "EVENT#1001#SHARD#03",
+              "GSI3SK": "STATUS#WAITING#2026-07-10T18:01:23.000001Z#40bd",
+              "queuePosition": "2026-07-10T18:01:23.000001Z#40bd",
+              "status": "WAITING",
+              "userId": "FAN-0002",
+              "entityType": "QUEUE"
+            },
+            {
+              "GSI3PK": "EVENT#1001#SHARD#05",
+              "GSI3SK": "STATUS#ADMITTED#2026-07-10T18:01:24.100000Z#a901",
+              "queuePosition": "2026-07-10T18:01:24.100000Z#a901",
+              "status": "ADMITTED",
+              "userId": "FAN-0003",
+              "entityType": "QUEUE"
+            },
+            {
+              "GSI3PK": "EVENT#1002#SHARD#01",
+              "GSI3SK": "STATUS#WAITING#2026-07-10T18:02:10.500000Z#b337",
+              "queuePosition": "2026-07-10T18:02:10.500000Z#b337",
+              "status": "WAITING",
+              "userId": "FAN-0004",
+              "entityType": "QUEUE"
+            },
+            {
+              "GSI3PK": "EVENT#1002#SHARD#08",
+              "GSI3SK": "STATUS#CANCELLED#2026-07-10T18:02:11.500000Z#cc21",
+              "queuePosition": "2026-07-10T18:02:11.500000Z#cc21",
+              "status": "CANCELLED",
+              "userId": "FAN-0005",
+              "entityType": "QUEUE"
+            }
+          ]
+        }
+      ],
+      "LocalSecondaryIndexes": [],
+      "TimeToLiveSpecification": {
+        "AttributeName": "ttl",
+        "Enabled": true
+      },
+      "StreamSpecification": {
+        "StreamViewType": "NEW_AND_OLD_IMAGES"
+      },
+      "SampleItems": [
+        {
+          "PK": "EVENT#1001",
+          "SK": "METADATA",
+          "entityType": "EVENT",
+          "eventId": "1001",
+          "matchName": "Manchester United vs Liverpool",
+          "stadium": "Old Trafford",
+          "capacity": 50000,
+          "status": "OPEN",
+          "startTime": "2026-07-12T15:00:00Z"
+        },
+        {
+          "PK": "EVENT#1001",
+          "SK": "STATS",
+          "entityType": "STATS",
+          "eventId": "1001",
+          "waitingUsers": 2,
+          "admittedUsers": 1,
+          "cancelledUsers": 0,
+          "closedUsers": 0,
+          "totalUsers": 3,
+          "currentlyServingPosition": "2026-07-10T18:01:24.100000Z#a901"
+        },
+        {
+          "PK": "EVENT#1001#SHARD#00",
+          "SK": "QUEUE#2026-07-10T18:01:22.123456Z#8f4a",
+          "entityType": "QUEUE",
+          "eventId": "1001",
+          "userId": "FAN-0001",
+          "queueShard": 0,
+          "queuePosition": "2026-07-10T18:01:22.123456Z#8f4a",
+          "status": "WAITING",
+          "estimatedWait": 1,
+          "joinTime": "2026-07-10T18:01:22.123456Z",
+          "GSI1PK": "USER#FAN-0001",
+          "GSI1SK": "EVENT#1001",
+          "GSI3PK": "EVENT#1001#SHARD#00",
+          "GSI3SK": "STATUS#WAITING#2026-07-10T18:01:22.123456Z#8f4a"
+        },
+        {
+          "PK": "USER#FAN-0001",
+          "SK": "QUEUE#EVENT#1001",
+          "entityType": "QUEUE_REGISTRATION",
+          "eventId": "1001",
+          "userId": "FAN-0001",
+          "queuePosition": "2026-07-10T18:01:22.123456Z#8f4a",
+          "queuePK": "EVENT#1001#SHARD#00",
+          "queueSK": "QUEUE#2026-07-10T18:01:22.123456Z#8f4a",
+          "queueShard": 0,
+          "status": "WAITING",
+          "estimatedWait": 1
+        },
+        {
+          "PK": "EVENT#1001#SHARD#03",
+          "SK": "QUEUE#2026-07-10T18:01:23.000001Z#40bd",
+          "entityType": "QUEUE",
+          "eventId": "1001",
+          "userId": "FAN-0002",
+          "queueShard": 3,
+          "queuePosition": "2026-07-10T18:01:23.000001Z#40bd",
+          "status": "WAITING",
+          "estimatedWait": 2,
+          "joinTime": "2026-07-10T18:01:23.000001Z",
+          "GSI1PK": "USER#FAN-0002",
+          "GSI1SK": "EVENT#1001",
+          "GSI3PK": "EVENT#1001#SHARD#03",
+          "GSI3SK": "STATUS#WAITING#2026-07-10T18:01:23.000001Z#40bd"
+        },
+        {
+          "PK": "TOKEN#TOK-1001-0001",
+          "SK": "METADATA",
+          "entityType": "TOKEN",
+          "tokenId": "TOK-1001-0001",
+          "userId": "FAN-0003",
+          "eventId": "1001",
+          "status": "ACTIVE",
+          "expiresAt": 1783710982,
+          "ttl": 1783710982,
+          "GSI2PK": "TOKEN#TOK-1001-0001",
+          "GSI2SK": "STATUS#ACTIVE"
+        },
+        {
+          "PK": "USER#FAN-0001",
+          "SK": "SESSION#ACTIVE",
+          "entityType": "SESSION",
+          "sessionId": "SESSION-FAN-0001",
+          "userId": "FAN-0001",
+          "lastActivity": "2026-07-10T18:04:00Z",
+          "device": "browser",
+          "ttl": 1783712040
+        }
+      ]
+    }
+  ],
+  "CompletenessChecklist": {
+    "TablesIncluded": [ "FootballWaitingRoom" ],
+    "GlobalSecondaryIndexesIncluded": [ "GSI1", "GSI2", "GSI3" ],
+    "LocalSecondaryIndexesIncluded": [],
+    "LocalSecondaryIndexesReason": "The deployed DynamoDB table does not define LSIs.",
+    "MinimumSampleItemsPerTable": 5,
+    "MinimumSampleItemsPerIndex": 5
+  }
+}

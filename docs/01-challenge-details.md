@@ -170,6 +170,7 @@ The challenge is considered successful if the solution can:
 |---|---|
 | DynamoDB Single Table Design | [`05-table-schema.md`](05-table-schema.md) |
 | Access Pattern Analysis | [`03-access-patterns.md`](03-access-patterns.md) |
+| NoSQL Workbench Export | [`../nosql-workbench/football-waiting-room-data-model.json`](../nosql-workbench/football-waiting-room-data-model.json) |
 | Key Schema Design | [`05-table-schema.md`](05-table-schema.md) |
 | GSI Design | [`06-index-design.md`](06-index-design.md) |
 | API Design | [`08-api-design.md`](08-api-design.md) |
